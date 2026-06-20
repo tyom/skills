@@ -2,6 +2,21 @@
 name: explainer
 description: "Builds a self-contained, interactive HTML explainer for a subject, grounded in its real source. Use when the user wants to explain, visualise, or document something as a standalone HTML artifact."
 argument-hint: "<repo, codebase, spec, PR, API, dataset, architecture, or concept>"
+# Auto-approved while the skill runs, so it doesn't prompt on every step.
+# Scoped to safe file ops + known-safe Bash — deliberately NOT blanket Bash,
+# since the skill clones and inspects untrusted repos. Browser-verify and
+# anything outside this list still prompt (or run in acceptEdits/auto mode).
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Write
+  - Bash(git clone:*)
+  - Bash(ungit:*)
+  - Bash(mkdir:*)
+  - Bash(find:*)
+  - Bash(ls:*)
+  - Bash(wc:*)
 ---
 
 # Explain Visually
