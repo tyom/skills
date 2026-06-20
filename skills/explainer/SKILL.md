@@ -121,7 +121,12 @@ End with a short note on what the artifact was generated from (which files/docs 
 
 ### 4. Verify
 
-Open the file in a real browser and check it before finishing — drive it directly (e.g. a headless browser via the command line, or by opening the file and inspecting the rendered DOM). Do not rely on another skill to do this.
+Open the file in a real browser and check it before finishing — drive it directly, don't offload verification to another skill. **Decide the verification tool up front and confirm it's actually available before calling it** — don't trial-and-error through broken tool calls and error recovery. Use the first that's present:
+
+1. **Chrome DevTools MCP** (or any other connected browser-automation MCP) — preferred. Check it's connected before reaching for anything else.
+2. **System Chrome/Chromium, headless from the CLI** — confirm the binary first (`command -v`, or the known app path like `/Applications/Google Chrome.app/...`), then drive it with `--screenshot` / `--dump-dom`. Do **not** hand-wire Playwright or resolve npm module paths by hand; that `ERR_MODULE_NOT_FOUND` / CJS-vs-ESM rabbit hole burns tokens for nothing.
+
+If neither is available, leave the file for the user to open and say so, rather than thrashing.
 
 - Check desktop and a narrow mobile viewport.
 - Click every interactive control and confirm it behaves and updates correctly.
