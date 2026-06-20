@@ -13,7 +13,7 @@ npx skills add tyom/skills
 
 | Skill       | Description                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------- |
-| `explainer` | Builds a self-contained, interactive HTML explainer for any subject, grounded in the real source. |
+| `explainer` | Builds a self-contained, interactive HTML explainer for any subject — repo, spec, API, or concept — grounded in its real source so a reader can retell it. |
 
 ## Contributing
 
