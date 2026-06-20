@@ -1,0 +1,148 @@
+---
+name: explainer
+description: "Builds a self-contained, interactive HTML explainer for a subject, grounded in its real source so a reader can understand it and retell it. Use when the user wants to explain, visualize, diagram, or document something as a standalone HTML artifact."
+argument-hint: "<repo, codebase, spec, PR, API, dataset, architecture, or concept>"
+---
+
+# Explain Visually
+
+Produce a single self-contained HTML file that explains a subject so well the reader can rebuild a mental model of it and explain it back. Beauty serves clarity. Interactivity serves understanding. Every claim is grounded in the real source material.
+
+The subject is arbitrary: a code repo, a library, a protocol or spec, a pull request, an HTTP API, a data model, a config format, a build pipeline, an algorithm, or a pure concept. The skill is technology-agnostic — adapt the sections and demos to whatever the subject actually is.
+
+## Workflow
+
+### 1. Investigate the source
+
+Read the actual material before writing a word of explanation. Do not explain from priors or from the name alone.
+
+- For a **repo/codebase**: read the README, the manifest (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, etc.), the entry points, the module/folder layout, and the public surface (exported functions, types, routes, CLI). Note the language, the dependency count and what they are, the rough size, the version, the license.
+- For a **spec/protocol/API**: read the document; extract the message/endpoint vocabulary, required vs optional fields, state machines, and error cases.
+- For a **PR/change**: read the diff and the surrounding code it touches; identify what changed, why, and the blast radius.
+- For a **concept**: gather the canonical definition, the failure mode it addresses, and at least one concrete worked example.
+
+Capture concrete, checkable facts as you go — names, paths, signatures, commands, versions, counts, field types, default values. These are the backbone of trust; positioning language is not.
+
+Define the audience. Default to a **smart reader who is new to this specific thing** but technically literate. Define jargon before using it; if a term needs heavy domain context, replace it with plain language or teach it visually.
+
+### 2. Outline the teaching path
+
+Write the path before building. Decide:
+
+- what the reader must be able to explain back when done
+- the order that gets them there with the least backtracking
+- which ideas need a diagram, and which need a **live interactive demo**
+- what to omit (restraint is a feature)
+- which concrete source facts support each section
+
+**Content dimensions to cover** (include the ones that apply; skip what's irrelevant rather than padding):
+
+- **What it is** — the one-sentence identity, then what it _is not_ (the scope boundary). A clear "is / is not" pairing prevents the most common misunderstanding.
+- **Why it exists** — the problem or the old painful way, stated concretely.
+- **The mental model** — the one reusable idea the reader keeps.
+- **Architecture** — when the subject has structure: the parts, their responsibilities, how they connect, and the direction data/control flows. Name the real files/modules/services.
+- **Dependencies & footprint** — what it stands on (runtimes, libraries, services), how many, and the version/size/license facts that set expectations.
+- **Data model** — the core types/entities/schemas/messages, their fields, and any state machines or lifecycles they walk. Show the real shapes.
+- **A concrete example** — one real, end-to-end path through the subject taken from the source.
+- **Lifecycle / end-to-end flow** — follow one unit (a request, a record, a build, a turn) from entry to exit.
+- **What to do next** — the action the reader takes after understanding.
+
+Not every subject has all of these. A pure concept may have no dependencies; an API may have no architecture diagram but a rich data model. Choose deliberately.
+
+### 3. Build the HTML
+
+One self-contained `.html` file that opens in any browser with no build step. Inline the JS. **Prefer Tailwind via CDN for layout, spacing, typography, color, and responsive behavior** — reach for utility classes first. Use hand-rolled CSS (in a `<style>` block) only for what Tailwind handles poorly: font imports and theme tokens, SVG/diagram styling, keyframe animations, syntax-highlighting classes, complex selectors or pseudo-elements, and fine refinements. Keep the two consistent — drive custom CSS from the same color/spacing tokens Tailwind uses. The CDN script and a webfont are the only external assets allowed; nothing else the file can't live without.
+
+Structure:
+
+- A **hero fact sheet** as the opening screen (always — see below).
+- A sticky table of contents / section nav for anything longer than a couple of screens, so the artifact is navigable, not just scrollable.
+- One clear idea per section, with a simple concrete title (not a slogan).
+- Strong typography, spacing, and visual hierarchy. Slide-like sections on desktop; readable stacked sections on mobile.
+
+#### The hero fact sheet
+
+Every explainer opens with the same recognizable pattern — it sets the subject and earns trust before any prose. Build it from these stacked parts, top to bottom:
+
+1. **Eyebrow chips** — a row of 1–3 small pill/tag chips for the categorical identity: subject kind + the most load-bearing classifiers. For code: `python package`, `v0.1.0 · MIT`. For non-code: the equivalent (e.g. `RFC · proposed standard`, `REST API · v2`, `concept`). Keep them mono and muted.
+2. **The name**, as a restrained display title (`md:text-6xl`/`7xl`).
+3. **A one-to-two-sentence plain-language identity** — what it is and who it's for, in prose, with a key identifier or two highlighted inline (mono/accent). No marketing.
+4. **The grounding-fact grid** — a single horizontal row of **4–6 cells** (responsive: wrap to 2–3 columns on mobile), each a large colored number/value over a small muted label. These are the checkable facts that set expectations at a glance. Pick the ones that actually matter for the subject:
+   - code/repo: dependency count, public-surface or type count, file/module count, lines of code, test count, language/runtime version, license.
+   - spec/protocol: message/endpoint count, required-field count, version, status, error-code count.
+   - API: endpoint count, auth model, rate limit, version, response format.
+   - dataset: row/record count, column/field count, size on disk, format, license.
+   - concept: a small number of defining quantities or the canonical "N parts / N rules / N states."
+5. **A meta line** directly under the grid (small, muted, mono) for the remaining provenance-ish facts that don't deserve a cell: package name, author/maintainer, optional extras, source URL, commit/date.
+
+Every value in the fact sheet must be a real, verified fact from the source — never a guess or a placeholder. If you can't verify a count, either compute it or leave that cell out; do not pad the grid to hit six.
+
+Use **diagrams** to show structure and flow: architecture layers, sequence/lifecycle, state machines, data shapes. Diagram text must be centered, aligned, and fully contained inside its shapes — use explicit font sizes, `text-anchor`, `dominant-baseline`, and padding so labels never drift, clip, or touch borders.
+
+#### Make it interactive where it earns understanding
+
+This is what separates a beautiful read from a thing the reader actually _gets_. Wherever a mechanism can be operated rather than described, let the reader operate it. Build the interactivity as a faithful, self-contained reimplementation of the real logic (a small JS port), and say so. Match the patterns to the subject:
+
+- **Transformer / encoder / parser** → an input the reader picks or edits, showing the exact output the real code would produce. Annotate the rules being applied.
+- **Reducer / state machine / algorithm** → a **navigable step-through** (see below), so the reader watches state assemble one event at a time and can move back and forth through the transitions.
+- **Architecture** → clickable layers/nodes that expand to reveal each part's job, public surface, and source file.
+- **API / protocol** → pick an endpoint or message and see the request/response or wire bytes; toggle options and watch the payload change.
+- **Data model** → toggle between fields, walk a record through its lifecycle states, or filter a schema.
+- **Config / flags** → flip options and render the resulting effective behavior.
+
+Keep demos honest: port the real rules, use realistic sample data drawn from the source, and don't fake outputs. Provide a few curated scenarios rather than a blank canvas — guided beats open-ended for teaching. Every interactive control needs a visible, discoverable affordance (a labelled button, a select, a hover hint).
+
+##### Step-through demos: make the state navigable
+
+When the mechanism is a reducer, state machine, or algorithm that evolves state event-by-event, a one-way "play" is not enough — the _transitions_ are the lesson, and the reader needs to study each one. Build these to a higher bar:
+
+- **Derive state as a pure fold over the event prefix.** Compute the displayed state as `reduce(events[0..n])` from scratch on every navigation, rather than mutating one state forward in place. This single choice is what makes everything below cheap and correct: any step `n` is directly reachable, and there is no separate "undo" to get wrong.
+- **Navigate in both directions.** Provide **Prev and Next** (plus Reset, and optionally Auto-play) with a visible step counter like `step n / total`. Forward-only stepping is a regression — the reader must be able to back up and re-watch a single transition as many times as they want.
+- **Drive it from the keyboard too.** Bind **← / →** to Prev / Next while the demo is focused or in view. It's a cheap, discoverable accelerator that turns "exploring the transitions" into a fluid motion.
+- **Highlight the diff at each step.** The point of a step-through is the _delta_, so make the delta the most visible thing on screen: flash or outline the element added or mutated this step, and where a field changed, show the transition (`old → new`) rather than only the final value. A reader should never have to hunt for what just happened.
+- **Render the derived state semantically, not as a raw dump.** Show the assembling structure the way it really takes shape — cards/shapes with type and state labels, streaming/cursor affordances, per-kind color — so the reader sees _structure_ forming, not text accreting. A `JSON.stringify` block is a fallback of last resort, not the default.
+- **Offer a small scenario selector** when several short curated paths teach the branches better than one long path — e.g. a happy path, an error, and an approval/branch case. Each scenario is its own event list folded by the same reducer; switching resets cleanly to step 0.
+
+Interactivity is a strong default, not a mandate for trivial subjects. A two-paragraph concept may need none. Anything with a transformation, a state machine, or composable parts almost always benefits.
+
+#### Provenance
+
+End with a short note on what the artifact was generated from (which files/docs were read) and that any live demos are faithful ports of the real logic. This earns the reader's trust and dates the explanation.
+
+### 4. Verify
+
+Open the file in a real browser and check it before finishing — drive it directly (e.g. a headless browser via the command line, or by opening the file and inspecting the rendered DOM). Do not rely on another skill to do this.
+
+- Check desktop and a narrow mobile viewport.
+- Click every interactive control and confirm it behaves and updates correctly.
+- For a step-through demo: step **forward to the end, then back to the start**, and confirm the state shown at each index is identical in both directions (the pure-fold model guarantees this — if it isn't, the state is being mutated, not recomputed). Confirm the **diff highlight** marks the element that actually changed at that step (not stale, not missing), that **← / →** drive the demo, and that Prev at step 0 and Next at the final step are safe no-ops rather than broken states.
+- Fix overflow, overlap, clipped or drifting text, unreadable scale, cramped spacing, broken responsive layout, and any dead control.
+
+The artifact fails if a demo is broken as surely as if text overflows.
+
+## Style
+
+- Choose a visual register that fits the subject. A codebase or protocol reads well in a focused **IDE-dark, mono-forward** theme; a product concept can take a warmer editorial palette. Commit to one coherent system of fonts, color tokens, and spacing rather than mixing registers — express it through a small Tailwind config (`tailwind.config` inline, or CSS variables the utilities reference) so the whole document shares one palette.
+- Use a display face for headings and a monospace face for code, identifiers, and wire/data. Keep code visually distinct from prose.
+- Think in grids, line height, margins, and hierarchy. Whitespace is structure.
+- Keep hero titles restrained. Prefer `md:text-7xl`; avoid the largest sizes unless the title is very short.
+- Split content into more sections before cramming one. One idea per section.
+- On mobile: natural-height sections, single-column grids, compact display type, readable body text, diagrams that fit without dominating. A mobile hero should feel native, not like a cropped desktop slide.
+- Syntax-highlight code by hand with custom CSS classes (comment / keyword / string / function / literal) so snippets read like an editor, not a blob — this is one of the cases custom CSS is for.
+
+## Rules
+
+- Explain, do not decorate. Teach before you summarize.
+- The first screen is the **hero fact sheet**: eyebrow chips, the name, a plain-language identity sentence, and a grid of 4–6 verified grounding-fact cells over a meta line. State what the subject is before anything else.
+- Define loaded terms before relying on them. Simple words beat abstract titles.
+- Make only claims the source supports. Use real names, paths, signatures, commands, versions, and counts — they let the reader trust and verify.
+- Pair what it **is** with what it **is not** when scope is easily mistaken.
+- Cover the dimensions that apply: identity, architecture, dependencies, data model, lifecycle. Skip the ones that don't rather than padding.
+- Show at least one transformation: before/after, problem/solution, vague/clear, hidden/visible, or input/output.
+- Give the reader one reusable mental model and one concrete end-to-end example from the source.
+- Prefer an operable demo over a static diagram wherever a mechanism can be operated. Demos must be faithful ports of the real logic, with realistic sample data — never faked output.
+- A step-through demo must be navigable in **both directions** and must **highlight what changed** at each step; derive its state as a pure fold over the event prefix so every step is reachable. Forward-only playback or a raw state dump is a regression.
+- Every interactive control must be discoverable and must work. A broken or dead control is a failure.
+- Diagram text must be centered, aligned, and contained inside its shapes. Do not use `overflow: hidden` on content containers to hide layout problems.
+- End with the next action the reader should take, and a note on what the artifact was generated from.
+- The artifact fails if the reader cannot explain the subject back, if any text overlaps/clips/overflows, or if any demo is broken.

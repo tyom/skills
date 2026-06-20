@@ -11,9 +11,9 @@ npx skills add tyom/skills
 
 ## Skills
 
-| Skill      | Description           |
-| ---------- | --------------------- |
-| _none yet_ | Add your first skill. |
+| Skill       | Description                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------- |
+| `explainer` | Builds a self-contained, interactive HTML explainer for any subject, grounded in the real source. |
 
 ## Contributing
 
