@@ -6,7 +6,7 @@ argument-hint: "<repo, codebase, spec, PR, API, dataset, architecture, or concep
 
 # Explain Visually
 
-Produce a single self-contained HTML file that explains a subject so well the reader can rebuild a mental model of it and explain it back. Beauty serves clarity. Interactivity serves understanding. Every claim is grounded in the real source material.
+Produce a single self-contained HTML file that explains a subject so well the reader can rebuild a mental model of it and explain it back. Beauty serves clarity. Interactivity serves understanding. Explain, don't decorate — teach before you summarize. Every claim is grounded in the real source material.
 
 The subject is arbitrary: a code repo, a library, a protocol or spec, a pull request, an HTTP API, a data model, a config format, a build pipeline, an algorithm, or a pure concept. The skill is technology-agnostic — adapt the sections and demos to whatever the subject actually is.
 
@@ -49,6 +49,8 @@ Write the path before building. Decide:
 
 Not every subject has all of these. A pure concept may have no dependencies; an API may have no architecture diagram but a rich data model. Choose deliberately.
 
+Across the piece, show at least one **transformation** — before/after, problem/solution, vague/clear, hidden/visible, or input/output. Contrast is what makes an idea land.
+
 ### 3. Build the HTML
 
 One self-contained `.html` file that opens in any browser with no build step. Inline the JS. **Prefer Tailwind via CDN for layout, spacing, typography, color, and responsive behavior** — reach for utility classes first. Use hand-rolled CSS (in a `<style>` block) only for what Tailwind handles poorly: font imports and theme tokens, SVG/diagram styling, keyframe animations, syntax-highlighting classes, complex selectors or pseudo-elements, and fine refinements. Keep the two consistent — drive custom CSS from the same color/spacing tokens Tailwind uses. The CDN script and a webfont are the only external assets allowed; nothing else the file can't live without.
@@ -77,7 +79,7 @@ Every explainer opens with the same recognizable pattern — it sets the subject
 
 Every value in the fact sheet must be a real, verified fact from the source — never a guess or a placeholder. If you can't verify a count, either compute it or leave that cell out; do not pad the grid to hit six.
 
-Use **diagrams** to show structure and flow: architecture layers, sequence/lifecycle, state machines, data shapes. Diagram text must be centered, aligned, and fully contained inside its shapes — use explicit font sizes, `text-anchor`, `dominant-baseline`, and padding so labels never drift, clip, or touch borders.
+Use **diagrams** to show structure and flow: architecture layers, sequence/lifecycle, state machines, data shapes. Diagram text must be centered, aligned, and fully contained inside its shapes — use explicit font sizes, `text-anchor`, `dominant-baseline`, and padding so labels never drift, clip, or touch borders. Never reach for `overflow: hidden` on a content container to hide a layout problem instead of fixing it.
 
 #### Make it interactive where it earns understanding
 
@@ -118,7 +120,7 @@ Open the file in a real browser and check it before finishing — drive it direc
 - For a step-through demo: step **forward to the end, then back to the start**, and confirm the state shown at each index is identical in both directions (the pure-fold model guarantees this — if it isn't, the state is being mutated, not recomputed). Confirm the **diff highlight** marks the element that actually changed at that step (not stale, not missing), that **← / →** drive the demo, and that Prev at step 0 and Next at the final step are safe no-ops rather than broken states.
 - Fix overflow, overlap, clipped or drifting text, unreadable scale, cramped spacing, broken responsive layout, and any dead control.
 
-The artifact fails if a demo is broken as surely as if text overflows.
+The artifact fails if the reader cannot explain the subject back, if a demo is broken, or if any text overlaps, clips, or overflows.
 
 ## Style
 
@@ -129,20 +131,3 @@ The artifact fails if a demo is broken as surely as if text overflows.
 - Split content into more sections before cramming one. One idea per section.
 - On mobile: natural-height sections, single-column grids, compact display type, readable body text, diagrams that fit without dominating. A mobile hero should feel native, not like a cropped desktop slide.
 - Syntax-highlight code by hand with custom CSS classes (comment / keyword / string / function / literal) so snippets read like an editor, not a blob — this is one of the cases custom CSS is for.
-
-## Rules
-
-- Explain, do not decorate. Teach before you summarize.
-- The first screen is the **hero fact sheet**: eyebrow chips, the name, a plain-language identity sentence, and a grid of 4–6 verified grounding-fact cells over a meta line. State what the subject is before anything else.
-- Define loaded terms before relying on them. Simple words beat abstract titles.
-- Make only claims the source supports. Use real names, paths, signatures, commands, versions, and counts — they let the reader trust and verify.
-- Pair what it **is** with what it **is not** when scope is easily mistaken.
-- Cover the dimensions that apply: identity, architecture, dependencies, data model, lifecycle. Skip the ones that don't rather than padding.
-- Show at least one transformation: before/after, problem/solution, vague/clear, hidden/visible, or input/output.
-- Give the reader one reusable mental model and one concrete end-to-end example from the source.
-- Prefer an operable demo over a static diagram wherever a mechanism can be operated. Demos must be faithful ports of the real logic, with realistic sample data — never faked output.
-- A step-through demo must be navigable in **both directions** and must **highlight what changed** at each step; derive its state as a pure fold over the event prefix so every step is reachable. Forward-only playback or a raw state dump is a regression.
-- Every interactive control must be discoverable and must work. A broken or dead control is a failure.
-- Diagram text must be centered, aligned, and contained inside its shapes. Do not use `overflow: hidden` on content containers to hide layout problems.
-- End with the next action the reader should take, and a note on what the artifact was generated from.
-- The artifact fails if the reader cannot explain the subject back, if any text overlaps/clips/overflows, or if any demo is broken.
