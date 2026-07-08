@@ -1,6 +1,6 @@
 ---
 name: explainer
-description: "Builds a self-contained, interactive HTML explainer for a subject, grounded in its real source. Use when the user wants to explain, visualise, or document something as a standalone HTML artifact."
+description: "Builds a self-contained, interactive HTML explainer for a subject. Use when the user wants to explain, visualise, or document something as a standalone HTML artifact."
 argument-hint: "<repo, codebase, spec, PR, API, dataset, architecture, or concept>"
 # Auto-approved while the skill runs, so it doesn't prompt on every step.
 # Scoped to safe file ops + known-safe Bash — deliberately NOT blanket Bash,
@@ -103,15 +103,13 @@ Use **diagrams** to show structure and flow: architecture layers, sequence/lifec
 This is what separates a beautiful read from a thing the reader actually _gets_. Wherever a mechanism can be operated rather than described, let the reader operate it. Build the interactivity as a faithful, self-contained reimplementation of the real logic (a small JS port), and say so. Match the patterns to the subject:
 
 - **Transformer / encoder / parser** → an input the reader picks or edits, showing the exact output the real code would produce. Annotate the rules being applied.
-- **Reducer / state machine / algorithm** → a **navigable step-through** (see below), so the reader watches state assemble one event at a time and can move back and forth through the transitions.
+- **Reducer / state machine / algorithm** → a **navigable step-through** built to the higher bar in [`step-throughs.md`](step-throughs.md) (pure fold, both-direction nav, keyboard, diff highlight, semantic render, scenario selector) — the transitions are the lesson, not the final state.
 - **Architecture** → clickable layers/nodes that expand to reveal each part's job, public surface, and source file.
 - **API / protocol** → pick an endpoint or message and see the request/response or wire bytes; toggle options and watch the payload change.
 - **Data model** → toggle between fields, walk a record through its lifecycle states, or filter a schema.
 - **Config / flags** → flip options and render the resulting effective behaviour.
 
 Keep demos honest: port the real rules, use realistic sample data drawn from the source, and don't fake outputs. Provide a few curated scenarios rather than a blank canvas — guided beats open-ended for teaching. Every interactive control needs a visible, discoverable affordance (a labelled button, a select, a hover hint).
-
-When the subject is a **reducer, state machine, or algorithm** that evolves state event-by-event, a one-way "play" is not enough — the transitions are the lesson. Build it as a **navigable step-through** to the higher bar in [`step-throughs.md`](step-throughs.md) (pure fold, both-direction nav, keyboard, diff highlight, semantic render, scenario selector).
 
 Interactivity is a strong default, not a mandate for trivial subjects. A two-paragraph concept may need none. Anything with a transformation, a state machine, or composable parts almost always benefits.
 
