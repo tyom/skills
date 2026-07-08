@@ -14,6 +14,7 @@ npx skills add tyom/skills
 | Skill       | Description                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------- |
 | `explainer` | Builds a self-contained, interactive HTML explainer for any subject — repo, spec, API, or concept — grounded in its real source so a reader can retell it. |
+| `d2`        | Builds presentation-grade diagrams locally with the D2 CLI (ELK layout; TALA when licensed). |
 
 ## Contributing
 
