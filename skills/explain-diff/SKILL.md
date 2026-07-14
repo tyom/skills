@@ -1,6 +1,6 @@
 ---
 name: explain-diff
-description: "Use when the user wants a rich, teach-me explanation of a code change — a local diff, branch, commit range, or GitHub PR. Builds a self-contained interactive HTML page: background, intuition, code walkthrough, and a comprehension quiz."
+description: "Teaches a code change — a local diff, branch, commit range, or GitHub PR — as a self-contained interactive HTML page. Use when the user asks to explain, walk through, or understand a diff, PR, or commit rather than just summarize it."
 argument-hint: "<PR url/number, branch, commit range, or nothing for the working diff>"
 # Auto-approved while the skill runs, so it doesn't prompt on every step.
 # Scoped to safe read-only git/gh inspection + file ops — deliberately NOT
@@ -63,6 +63,8 @@ Craft rules:
 - Diagrams, never ASCII art: build them as simple HTML/SVG. Reuse a **small number of diagram families** across the piece — e.g. a simplified version of the app's UI for UI changes, and a system/data-flow diagram (with **example data** in it) for component interactions. Lists of things are HTML lists.
 - Code blocks go in `<pre>` tags. If you style a `<div>` instead, its CSS **must** set `white-space: pre` or `pre-wrap`, or the browser collapses every newline into one line. Before saving, scan each code block in the source and confirm it does.
 - Use callouts for key concepts, definitions, and important edge cases.
+
+Completion: the file is saved with all four sections present and every craft rule confirmed against the source.
 
 ## 4. Verify
 

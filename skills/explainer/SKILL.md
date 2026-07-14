@@ -64,8 +64,6 @@ Write the path before building. Decide:
 - **Lifecycle / end-to-end flow** — follow one unit (a request, a record, a build, a turn) from entry to exit.
 - **What to do next** — the action the reader takes after understanding.
 
-Not every subject has all of these. A pure concept may have no dependencies; an API may have no architecture diagram but a rich data model. Choose deliberately.
-
 Across the piece, show at least one **transformation** — before/after, problem/solution, vague/clear, hidden/visible, or input/output. Contrast is what makes an idea land.
 
 ### 3. Build the HTML
