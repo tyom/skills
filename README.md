@@ -11,9 +11,10 @@ npx skills add tyom/skills
 
 ## Skills
 
-| Skill       | Description                                                                                       |
-| ----------- | ------------------------------------------------------------------------------------------------- |
-| `explainer` | Builds a self-contained, interactive HTML explainer for any subject — repo, spec, API, or concept — grounded in its real source so a reader can retell it. |
+| Skill          | Description                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `explainer`    | Builds a self-contained, interactive HTML explainer for any subject — repo, spec, API, or concept — grounded in its real source so a reader can retell it.                  |
+| `explain-diff` | Explains a code change — local diff, branch, commit range, or GitHub PR — as a self-contained HTML page: background, intuition, code walkthrough, and a comprehension quiz. |
 
 ## Contributing
 
