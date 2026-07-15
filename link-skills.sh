@@ -44,10 +44,16 @@ render() {
 }
 
 link_one() {
-  local n="$1" t="$GLOBAL/$n"
+  local n="$1" force="${2:-}" t="$GLOBAL/$n"
+  [ -e "$REPO_SKILLS/$n/SKILL.md" ] || { row "✗" "$Y" unknown "$n — no such skill in this repo"; return; }
   case "$(state_of "$n")" in
     linked)   row "=" "$D" linked   "$n (already)" ;;
-    conflict) row "✗" "$Y" conflict "$n — $t exists and isn't ours; skipping" ;;
+    conflict)
+      if [ -n "$force" ]; then
+        rm -rf "$t"; ln -s "$REPO_SKILLS/$n" "$t"; row "+" "$G" linked "$n (replaced existing)"
+      else
+        row "✗" "$Y" conflict "$n — $t exists and isn't ours; re-run with -f to replace"
+      fi ;;
     absent)   ln -s "$REPO_SKILLS/$n" "$t"; row "+" "$G" linked "$n" ;;
   esac
 }
@@ -77,8 +83,10 @@ cmd_status() {
 
 cmd_link() {
   mkdir -p "$GLOBAL"
-  local names=("$@"); [ $# -eq 0 ] && names=($(repo_skills))
-  local n; for n in "${names[@]}"; do link_one "$n"; done
+  local force="" names=() a
+  for a in "$@"; do case $a in -f|--force) force=1 ;; *) names+=("$a") ;; esac; done
+  [ ${#names[@]} -eq 0 ] && names=($(repo_skills))
+  local n; for n in "${names[@]}"; do link_one "$n" "$force"; done
 }
 
 cmd_unlink() {
@@ -110,5 +118,5 @@ case "${1:-status}" in
   link)     shift; cmd_link "$@" ;;
   unlink)   shift; cmd_unlink "$@" ;;
   selftest) cmd_selftest ;;
-  *) echo "usage: $0 [status | link [names...] | unlink [names...]]" >&2; exit 2 ;;
+  *) echo "usage: $0 [status | link [-f] [names...] | unlink [names...]]" >&2; exit 2 ;;
 esac
