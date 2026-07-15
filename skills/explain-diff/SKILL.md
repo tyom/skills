@@ -18,6 +18,7 @@ allowed-tools:
   - Bash(gh pr diff:*)
   - Bash(mkdir:*)
   - Bash(command -v:*)
+  - Bash(open:*)
 ---
 
 # Explain a Diff
@@ -43,7 +44,7 @@ Completion: you can explain the relevant existing system without referring to th
 
 ## 3. Build the page
 
-One self-contained `.html` file, one long scrolling page with a sticky table of contents and section headers, no top-level tabs. Basic responsive styling so it reads on a phone.
+One self-contained `.html` file, one long scrolling page with section headers, no top-level tabs. Navigation is a **sticky sidebar with two levels**: one link per section and one per subsection (every `h3` gets an anchor and a nav entry), so the reader can jump straight to "the gate function" or "a worked example", not just to "Code". On narrow viewports the sidebar collapses to a plain top strip; never let it overlap content.
 
 Write plainly, for a developer audience. Short common words, concrete nouns and verbs, one idea per sentence. Keep the technical terms a developer needs; drop the polish. No em-dashes (use a comma, period, colon, or parentheses). No hype, no cliches, no slogan endings.
 
@@ -62,12 +63,19 @@ Craft rules:
 - Inline all CSS and JavaScript — no external assets, no build step.
 - Diagrams, never ASCII art: build them as simple HTML/SVG. Reuse a **small number of diagram families** across the piece — e.g. a simplified version of the app's UI for UI changes, and a system/data-flow diagram (with **example data** in it) for component interactions. Lists of things are HTML lists.
 - Code blocks go in `<pre>` tags. If you style a `<div>` instead, its CSS **must** set `white-space: pre` or `pre-wrap`, or the browser collapses every newline into one line. Before saving, scan each code block in the source and confirm it does.
+- Show changed code **as a diff, not a flat listing**: a few lines of unchanged context, with added lines on a full-width green background and removed lines on a full-width red background (a `<span>` per line with `display: inline-block; width: 100%` inside the `<pre>`). The green/red is a **translucent background tint only** — `rgba(92,180,98,.24)` added, `rgba(225,95,95,.22)` removed — never a text colour. Code blocks sit on a **neutral charcoal** background (`#212327`); a tinted dark (olive, navy, brand colour) swallows the green tint and the diff disappears. A code block with no visible change marking teaches nothing about what changed.
+- Every code block keeps **light syntax colouring** (comments, keywords, strings as coloured `<span>`s) — including inside diff blocks, where the syntax spans nest inside the line-tint spans. The diff tint marks *what changed*; syntax colour makes it *readable*; one never replaces the other.
+- Fidelity check before saving: for each diff block, compare its added and removed lines against the real patch from step 1. Trimming context or eliding with `/* … */` is fine; a line marked as added that the patch doesn't add (or code silently rewritten) is not.
 - Use callouts for key concepts, definitions, and important edge cases.
 
 Completion: the file is saved with all four sections present and every craft rule confirmed against the source.
 
 ## 4. Verify
 
-Open the file in a real browser and drive it before finishing — follow the verify loop in the [`explainer`](../explainer/SKILL.md) skill (§4): decide the browser tool up front and confirm it's available, check desktop **and** a narrow mobile viewport, fix any overflow, overlap, clipped text, or dead control. Diff-specific check: click **every** quiz option across all five questions and confirm each shows correct/incorrect feedback.
+Source checks are mandatory and cheap — confirm them before handing over: charset meta first, all four sections present, every code block preserves newlines, diff blocks match the real patch.
+
+Browser verification is **opt-in**, because driving a real browser takes a while. After saving, open the page for the user (`open <file>` on macOS), then ask with one question whether to run the full browser check (recommended) or stop here, noting they are already looking at the page.
+
+If they opt in, follow the verify loop in the [`explainer`](../explainer/SKILL.md) skill (§4): decide the browser tool up front and confirm it's available, check desktop **and** a narrow mobile viewport, fix any overflow, overlap, clipped text, or dead control. Diff-specific check: click **every** quiz option across all five questions and confirm each shows correct/incorrect feedback.
 
 The artifact fails if the reader cannot explain the change back, if the quiz is broken, or if any text overlaps, clips, or overflows.
