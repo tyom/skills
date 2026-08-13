@@ -19,7 +19,7 @@ allowed-tools:
 
 # Micro-world
 
-Build a Papert-style micro-world: a small self-contained universe with its own objects and rules that the user manipulates to learn by experiment. The page *is* the subject, working — the user pokes it and watches what happens. For a document that explains a subject, use `explainer` instead.
+Build a Papert-style micro-world: a small self-contained universe with its own objects and rules that the user manipulates to learn by experiment. The page *is* the subject, working — the user pokes it and watches what happens. For a document that explains a subject, say so and stop: that is the `explainer` skill, which the user runs with `/explainer`.
 
 ## 1. Pick the subject
 

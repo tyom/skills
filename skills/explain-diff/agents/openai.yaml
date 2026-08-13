@@ -1,0 +1,6 @@
+# No `policy.allow_implicit_invocation` here: this skill is model-invoked in
+# both harnesses, and the key defaults to true. Set it to false only alongside
+# `disable-model-invocation: true` in SKILL.md.
+interface:
+  display_name: "Explain Diff"
+  short_description: "Teach a diff or PR as an HTML page"
