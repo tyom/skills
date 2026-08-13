@@ -1,9 +1,0 @@
-{
-  "name": "tyom-skills",
-  "skills": [
-    "./skills/explainer",
-    "./skills/explain-diff",
-    "./skills/micro-world",
-    "./skills/ungit"
-  ]
-}

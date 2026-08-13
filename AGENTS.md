@@ -17,9 +17,10 @@ here for the shared guidance.
 1. Create `skills/<name>/SKILL.md` (or run `npx skills init <name>`).
 2. Fill in the frontmatter and body. The `name` must be kebab-case and match the
    folder name.
-3. Register the path in `.claude-plugin/plugin.json` (add `"./skills/<name>"` to
-   the `skills` array).
-4. Add a row to the Skills table in `README.md`.
+3. Add a row to the Skills list in `README.md`.
+
+Nothing else to register: the skills.sh CLI finds skills by walking `skills/`,
+and `link-skills.sh` globs `skills/*/SKILL.md`.
 
 A `SKILL.md` has YAML frontmatter — required `name` (kebab-case) and
 `description`, optional `disable-model-invocation: true` — followed by a markdown
