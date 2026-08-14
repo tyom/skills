@@ -1,6 +1,6 @@
 ---
 name: humanizer
-description: Rewrites prose to read like a person wrote it. Use when the user asks to humanize or de-slop a draft, flags AI tone, hype, or cliches in their text, or when the deliverable is prose that ships: landing pages, READMEs, posts, emails, release notes, changelogs.
+description: "Rewrites prose to read like a person wrote it. Use when the user asks to humanize or de-slop a draft, flags AI tone, hype, or cliches in their text, or when the deliverable is prose that ships: landing pages, READMEs, posts, emails, release notes, changelogs."
 argument-hint: "<text, file path, or draft; empty for the prose just written>"
 ---
 
