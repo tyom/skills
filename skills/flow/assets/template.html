@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow</title>
+<style>/*VENDOR_CSS*/</style>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #14171a; --muted: #6b7280;
+    --line: #e3e6ea; --accent: #2563eb;
+    --start: #059669; --step: #64748b; --decision: #d97706;
+    --io: #2563eb; --store: #7c3aed; --end: #dc2626; --fork: #0d9488; --state: #db2777;
+    --success: #059669; --join: var(--fork);
+    --ok: var(--success); --bad: var(--end);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
+      --line: #2a3038; --accent: #60a5fa;
+      --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
+      --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
+      --success: #34d399;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #root { display: flex; flex-direction: column; }
+
+  header {
+    display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap;
+    padding: 0 16px; min-height: 45px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  /* The title occupies the tab rail for a single diagram; with several diagrams,
+     the rail becomes the navigation and keeps the controls on the right. */
+  header .tabs { display: flex; gap: 2px; flex: 1; min-width: 120px; }
+  .flow-title {
+    align-self: center; margin: 0; overflow: hidden; color: var(--ink);
+    font-size: 14px; font-weight: 600; line-height: 1.25;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  header button {
+    font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
+    align-self: center; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  header button:hover { border-color: var(--accent); }
+  button:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px;
+  }
+  /* A tab is navigation, not an option: no box, and its indicator sits down on
+     the header's own bottom rule so the strip reads as the edge of the canvas. */
+  header .tab {
+    align-self: stretch; margin-bottom: -1px; padding: 0 11px;
+    font-size: 14px; color: var(--muted); background: none;
+    border: none; border-bottom: 2px solid transparent; border-radius: 0;
+  }
+  header .tab:hover { color: var(--ink); border-color: var(--line); }
+  header .tab.on { color: var(--ink); font-weight: 500; border-bottom-color: var(--accent); }
+  .edge-legend {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+    max-width: calc(100% - 30px); padding: 7px 9px;
+    color: var(--muted); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; font-size: 11px; white-space: nowrap; pointer-events: none;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
+  .badge {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid currentColor; cursor: help; align-self: center;
+  }
+  .badge.ok { color: var(--ok); padding: 3px 7px; }
+  .badge.bad { color: var(--bad); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  .canvas { flex: 1; min-width: 0; }
+
+  aside {
+    width: clamp(272px, 26vw, 348px); flex: none; display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel); border-left: 1px solid var(--line);
+  }
+  .mobile-back { display: none; }
+  /* What the panel is about holds still; only the evidence for it scrolls. */
+  .panel-head { flex: none; padding: 20px 20px 16px; border-bottom: 1px solid var(--line); }
+  .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 17px 20px 28px; }
+
+  aside h2 {
+    margin: 0; font-size: 22px; line-height: 1.2; font-weight: 600;
+    letter-spacing: -.02em; overflow-wrap: anywhere;
+  }
+  /* One dense line under the title carrying every secondary fact: what kind of
+     thing this is, and where it lives. Nothing above the heading. */
+  aside .meta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+    margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--muted);
+  }
+  aside .meta .sep { opacity: .45; }
+  aside .meta code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; overflow-wrap: anywhere;
+  }
+  aside .tag { display: inline-flex; align-items: center; gap: 5px; }
+  aside .tag .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+  aside .note { margin: 0 0 9px; font-size: 14px; font-style: italic; color: var(--muted); }
+  aside .detail { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+  aside .hint { margin: 15px 0 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+  aside .trail { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
+  aside .trail-label { font-size: 12px; color: var(--muted); }
+  /* A spine through the numbers: this is one path in order, not a bag of links.
+     Each number sits on the panel colour and masks the line behind it. */
+  aside .steps {
+    position: relative; margin: 12px 0 0; padding: 0 0 0 26px;
+    list-style: none; counter-reset: step;
+  }
+  aside .steps::before {
+    content: ''; position: absolute; left: 7px; top: 4px; bottom: 14px;
+    width: 1px;
+    /* --line is a border against a panel and disappears as a standalone rule;
+       the spine has to carry the eye down five items. */
+    background: color-mix(in srgb, var(--muted) 40%, transparent);
+  }
+  aside .steps li { position: relative; padding: 4px 0 10px; cursor: pointer; }
+  aside .steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: -26px; top: 4px; width: 15px; padding: 2px 0;
+    background: var(--panel); text-align: center;
+    font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  aside .steps li:hover, aside .steps li:hover::before { color: var(--accent); }
+  aside .steps li:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
+  }
+  aside .steps .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
+  aside .steps .ref {
+    display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* The badge is loud about a broken trace, so its explanation cannot whisper. */
+  aside .problems {
+    margin: 20px 0 0; padding: 11px 13px 11px 28px; border-radius: 8px;
+    font-size: 14px; color: var(--bad); border: 1px solid var(--bad);
+    background: color-mix(in srgb, var(--bad) 9%, transparent);
+  }
+  aside .problems li { margin: 3px 0; }
+
+  .node {
+    border-radius: 8px; text-align: left; cursor: grab; transition: opacity .15s;
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 4px solid var(--step);
+  }
+  .node:active { cursor: grabbing; }
+  .node .body { padding: 8px 12px; }
+  .node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .node.dim { opacity: .22; }
+  .react-flow__edge { transition: opacity .15s; }
+  .react-flow__edge.dim { opacity: .1; }
+  .react-flow__node:focus-visible .node {
+    outline: 3px solid var(--accent); outline-offset: 4px;
+  }
+  .react-flow__edge:focus-visible .react-flow__edge-path {
+    stroke-width: 4 !important;
+  }
+  .node .label { font-weight: 500; }
+  .node .ref {
+    display: flex; margin-top: 2px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* The line number holds its width; the name is the only thing that can give. */
+  .node .ref .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node .ref .line { flex: none; }
+  .node .note { margin-top: 2px; font-size: 12px; font-style: italic; color: var(--muted); }
+  /* A state is a pill: rounded all the way, no leading bar, label centred —
+     the UML rounded rectangle, which reads as "a place to be" rather than
+     "a thing that happens". */
+  .node-state {
+    border: 1px solid var(--state); border-left-width: 1px; border-radius: 999px;
+  }
+  .node-state .body { padding: 8px 22px; text-align: center; }
+  .node-start { border-left-color: var(--start); }
+  /* A decision is a hexagon: the flowchart convention without a diamond's wasted
+     width. clip-path cuts any border or shadow, so the outer box *is* the outline
+     and the inner body sits 1px inside it. Handles stay on the clipped edges. */
+  .node-decision {
+    --point: 18px;
+    border: none; border-radius: 0; padding: 1px;
+    background: var(--decision);
+    clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
+                       calc(100% - var(--point)) 100%, var(--point) 100%);
+  }
+  .node-decision .body {
+    padding: 8px 26px;
+    background: var(--panel);
+    clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
+                       calc(100% - var(--point)) 100%, var(--point) 100%);
+  }
+  .node-decision.selected { background: var(--accent); padding: 2px; box-shadow: none; }
+  .node-io { border-left-color: var(--io); }
+  .node-store { border-left-color: var(--store); border-radius: 8px 8px 16px 16px; }
+  .node-end { border-left-color: var(--end); }
+  .node-success { border-left-color: var(--success); }
+  /* A fork or join is a bar, not a box: "all of these happen" reads at a glance
+     where a fourth box colour would not. */
+  .node-fork, .node-join {
+    border: none; border-radius: 3px; background: var(--fork);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .node-fork .body, .node-join .body {
+    padding: 0 10px; font-size: 11px; font-weight: 700; color: var(--panel);
+    letter-spacing: .06em; text-transform: uppercase;
+    overflow: hidden; white-space: nowrap;
+  }
+  .node-fork .label, .node-join .label { overflow: hidden; text-overflow: ellipsis; }
+  /* A bar is pinned to its height, so only the label fits. The note and the ref
+     are still there — they read in the panel. */
+  .node-fork .ref, .node-join .ref, .node-fork .note, .node-join .note { display: none; }
+  .node-fork.selected, .node-join.selected { box-shadow: 0 0 0 2px var(--accent); }
+
+  .react-flow__edge-text { font-size: 11px; fill: var(--muted); }
+  .react-flow__edge-textbg { fill: var(--bg); }
+  .react-flow__attribution { display: none; }
+  /* React Flow ships a light-only chrome; re-point it at the theme tokens. */
+  .react-flow__controls-button {
+    background: var(--panel); border-bottom: 1px solid var(--line); fill: var(--ink);
+  }
+  .react-flow__controls-button:hover { background: var(--bg); }
+  .react-flow__minimap { background: var(--panel); border: 1px solid var(--line); }
+  .react-flow__minimap-mask { fill: var(--bg); fill-opacity: .6; }
+
+  @media (max-width: 720px) {
+    header { gap: 6px; padding: 0 10px; }
+    header .tabs { min-width: 0; overflow-x: auto; }
+    header .tab { flex: none; min-height: 44px; }
+    header button:not(.tab) { min-height: 44px; }
+    header .minimap-toggle { display: none; }
+    .badge { white-space: nowrap; }
+
+    main.has-selection .canvas, main:not(.has-selection) aside { display: none; }
+    aside { width: 100%; border-left: 0; }
+    .mobile-back {
+      display: block; flex: none; align-self: flex-start;
+      min-height: 44px; margin: 12px 16px 0;
+      color: var(--ink); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 6px;
+      font: inherit; font-weight: 500; padding: 7px 12px; cursor: pointer;
+    }
+    .panel-head { padding: 16px; }
+    .panel-body { padding: 16px 16px 28px; }
+    .edge-legend, .react-flow__minimap { display: none; }
+    .react-flow__controls-button { width: 44px; height: 44px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node, .react-flow__edge { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script id="flow-data" type="application/json">__FLOW_DATA__</script>
+<script>/*VENDOR_JS*/</script>
+
+<script>
+(function () {
+  'use strict';
+
+  var h = React.createElement;
+  var RF = ReactFlow;
+  var useState = React.useState, useMemo = React.useMemo,
+      useCallback = React.useCallback, useEffect = React.useEffect;
+
+  // Fitting a long flow to the window shrinks it past reading size, so the fit
+  // stops at a floor and the graph is scrolled instead. The pane's own minZoom
+  // is lower, so zooming out by hand still works.
+  var FIT = { padding: 0.15, minZoom: 0.72 };
+
+  function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
+
+  // Estimated from the lines the body will hold: padding + label, then a note
+  // and a ref if present. dagre spaces ranks off this, so a short guess crowds
+  // every edge between them.
+  function heightOf(n) {
+    if (isBar(n.kind)) return 22;
+    return 37 + (n.note ? 18 : 0) + (n.ref ? 17 : 0);
+  }
+
+  // SVG fills and the minimap don't resolve CSS vars, so the palette is read
+  // out of the stylesheet once. Changing this list or any .node-* rule: build
+  // assets/kinds-probe.json, which renders every kind once, and look at it.
+  var KINDS = ['start', 'step', 'decision', 'io', 'store', 'end', 'success', 'fork', 'join', 'state'];
+  var css = getComputedStyle(document.documentElement);
+  var KIND_COLOR = KINDS.reduce(function (m, k) {
+    m[k] = css.getPropertyValue('--' + k).trim();
+    return m;
+  }, Object.create(null));
+  var ACCENT = css.getPropertyValue('--accent').trim();
+  var MUTED = css.getPropertyValue('--muted').trim();
+
+  // Unknown kinds fall back to 'step'; build.sh calls one out as a problem.
+  function kindOf(kind) { return KINDS.indexOf(kind) === -1 ? 'step' : kind; }
+  function isBar(kind) { return kind === 'fork' || kind === 'join'; }
+
+  // Everything an edge kind means, in one row: its legend entry, its colour and
+  // its dash. `progress: false` marks a kind that does not carry the flow
+  // forward, so the upstream walk stops rather than crossing it — a retry points
+  // back around a loop, and walking it would light sibling outcomes from earlier
+  // iterations. Insertion order is the legend's order.
+  var EDGE_KINDS = {
+    '': { label: 'Flow' },
+    async: { label: 'Async', dash: '7 5' },
+    retry: { label: 'Retry', color: KIND_COLOR.decision, dash: '2 5', progress: false },
+    error: { label: 'Error', color: KIND_COLOR.end }
+  };
+  function edgeKind(kind) { return EDGE_KINDS[kind] || EDGE_KINDS['']; }
+
+  // Closes over nothing, so the minimap's memoised nodes keep their identity.
+  function nodeColorOf(n) { return KIND_COLOR[n.data.kind]; }
+
+  // Private to whoever opens the page, and absent in a locked-down browser.
+  var MAP_KEY = 'flow:minimap';
+  function readMinimap() {
+    try { return localStorage.getItem(MAP_KEY) !== '0'; } catch (e) { return true; }
+  }
+  function writeMinimap(on) {
+    try { localStorage.setItem(MAP_KEY, on ? '1' : '0'); } catch (e) { /* no store */ }
+  }
+
+  var doc = JSON.parse(document.getElementById('flow-data').textContent);
+  if (doc.title) document.title = doc.title;
+
+  // Each tab is an independent graph: its own ids, its own validation, its own
+  // adjacency. Nothing crosses between them. build.sh normalises the one-diagram
+  // shorthand into this array, so there is always at least one.
+  function prepare(flow) {
+    var nodeList = flow.nodes || [], edgeList = flow.edges || [];
+    var known = nodeList.reduce(function (m, n) { m[n.id] = true; return m; }, Object.create(null));
+
+    var edgeItems = edgeList
+      .filter(function (e) { return known[e.from] && known[e.to]; })
+      .map(function (e, i) {
+        return {
+          id: 'e' + i, from: e.from, to: e.to,
+          label: e.label || '', kind: e.kind || '', detail: e.detail || ''
+        };
+      });
+
+    // A self-transition and a there-and-back pair both collapse onto one corridor
+    // under the built-in router: one visible line, and the label of whichever drew
+    // last. Both get a curve instead.
+    var seenPair = Object.create(null);
+    edgeItems.forEach(function (e) { seenPair[e.from + '\u0000' + e.to] = true; });
+    edgeItems.forEach(function (e) {
+      e.selfLoop = e.from === e.to;
+      e.twinned = !e.selfLoop && !!seenPair[e.to + '\u0000' + e.from];
+    });
+
+    var incoming = Object.create(null), outgoing = Object.create(null);
+    edgeItems.forEach(function (e) {
+      (incoming[e.to] || (incoming[e.to] = [])).push(e);
+      (outgoing[e.from] || (outgoing[e.from] = [])).push(e);
+    });
+
+    return {
+      title: flow.title || '', summary: flow.summary || '',
+      nodeList: nodeList, edgeItems: edgeItems,
+      // build.sh checked this graph and wrote its verdict in, so the badge on
+      // the page and the build output cannot disagree.
+      problems: flow.problems || [],
+      incoming: incoming, outgoing: outgoing,
+      edgeById: edgeItems.reduce(function (m, e) { m[e.id] = e; return m; }, Object.create(null)),
+      nodeById: nodeList.reduce(function (m, n) { m[n.id] = n; return m; }, Object.create(null))
+    };
+  }
+
+  var flows = doc.flows.map(prepare);
+  var tabIds = flows.map(function (f, i) {
+    var fallback = 'flow-' + (i + 1);
+    return (f.title || fallback).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
+  });
+
+  function tabFromHash() {
+    return Math.max(0, tabIds.indexOf(location.hash.slice(1)));
+  }
+
+  function unique(a) { return Array.from(new Set(a)); }
+
+  // --- what leads here ------------------------------------------------------
+  // Everything on a forward path into nodeId, by hop count. An edge kind that
+  // does not carry the flow forward is not crossed; see EDGE_KINDS.
+  function upstream(f, nodeId) {
+    var edges = Object.create(null), dist = Object.create(null);
+    var queue = [nodeId];
+    dist[nodeId] = 0;
+    while (queue.length) {
+      var cur = queue.shift();
+      (f.incoming[cur] || []).forEach(function (e) {
+        if (edgeKind(e.kind).progress === false) return;
+        edges[e.id] = true;
+        if (dist[e.from] === undefined) {
+          dist[e.from] = dist[cur] + 1;
+          queue.push(e.from);
+        }
+      });
+    }
+    return { edges: edges, dist: dist };
+  }
+
+  // Furthest hop first, so the list reads start-to-here.
+  function stepsInto(lit, minDist) {
+    return Object.keys(lit.dist)
+      .filter(function (id) { return lit.dist[id] >= minDist; })
+      .sort(function (a, b) { return lit.dist[b] - lit.dist[a]; });
+  }
+
+  function labelOf(f, id) {
+    return (f.nodeById[id] && f.nodeById[id].label) || id;
+  }
+
+  function leadIn(n) {
+    return n === 1 ? '1 step leads here' : n + ' steps lead here';
+  }
+
+  // The separators live here, so an absent fact never leaves a stray dot behind.
+  function metaRow(parts) {
+    var out = [];
+    parts.filter(Boolean).forEach(function (part, i) {
+      if (i) out.push(h('span', { className: 'sep', key: 'sep' + i }, '\u00b7'));
+      out.push(part);
+    });
+    return h('div', { className: 'meta' }, out);
+  }
+
+  function tag(color, text) {
+    return h('span', { className: 'tag', key: 'tag' },
+      h('span', { className: 'dot', style: { background: color } }), text);
+  }
+
+  function panelHead(title, parts) {
+    return h('div', { className: 'panel-head' },
+      h('h2', null, title),
+      metaRow(parts)
+    );
+  }
+
+  // --- layout ---------------------------------------------------------------
+  // dagre owns every coordinate; the flow data carries none.
+  function layout(nodes, edges, dir) {
+    var g = new dagre.graphlib.Graph();
+    g.setGraph({ rankdir: dir, nodesep: 52, ranksep: 96, marginx: 24, marginy: 24 });
+    g.setDefaultEdgeLabel(function () { return {}; });
+    nodes.forEach(function (n) {
+      g.setNode(n.id, { width: widthOf(n.kind), height: heightOf(n) });
+    });
+    edges.forEach(function (e) { g.setEdge(e.from, e.to); });
+    dagre.layout(g);
+    return nodes.map(function (n) {
+      var p = g.node(n.id), w = widthOf(n.kind), ht = heightOf(n), kind = kindOf(n.kind);
+      return {
+        id: n.id,
+        type: 'flow',
+        ariaLabel: (n.label || n.id) + ', ' + kind +
+          '. Select to inspect its path and details.',
+        position: { x: p.x - w / 2, y: p.y - ht / 2 },
+        // Declared, not measured — the minimap draws its rects before layout settles.
+        width: w, height: ht,
+        data: {
+          width: w,
+          // Only a bar is pinned to its height; a box grows with a wrapped label.
+          height: isBar(n.kind) ? ht : null,
+          label: n.label || n.id,
+          kind: kind,
+          note: n.note || '',
+          ref: n.ref || '',
+          detail: n.detail || '',
+          dir: dir
+        }
+      };
+    });
+  }
+
+  // --- node -----------------------------------------------------------------
+  // A node has room for the file and the line, not the path to it. The full ref
+  // is one click away in the panel, which is where a directory is worth reading.
+  function refLine(ref) {
+    var line = /:\d+$/.exec(ref);
+    var name = (line ? ref.slice(0, line.index) : ref).split('/').pop();
+    return h('div', { className: 'ref' },
+      h('span', { className: 'name', key: 'n' }, name),
+      line ? h('span', { className: 'line', key: 'l' }, line[0]) : null);
+  }
+
+  function FlowNode(props) {
+    var d = props.data;
+    var vertical = d.dir === 'TB';
+    return h('div', {
+      className: 'node node-' + d.kind + (d.selected ? ' selected' : '') + (d.dim ? ' dim' : ''),
+      style: d.height ? { width: d.width, height: d.height } : { width: d.width }
+    },
+      h(RF.Handle, {
+        id: 'tin', type: 'target',
+        position: vertical ? RF.Position.Top : RF.Position.Left,
+        style: { opacity: 0 }
+      }),
+      h(RF.Handle, {
+        id: 'sback', type: 'source',
+        position: vertical ? RF.Position.Top : RF.Position.Left,
+        style: { opacity: 0 }
+      }),
+      h(RF.Handle, {
+        id: 'tback', type: 'target',
+        position: vertical ? RF.Position.Bottom : RF.Position.Right,
+        style: { opacity: 0 }
+      }),
+      h('div', { className: 'body' },
+        h('div', { className: 'label' }, d.label),
+        d.note ? h('div', { className: 'note' }, d.note) : null,
+        d.ref ? refLine(d.ref) : null
+      ),
+      h(RF.Handle, {
+        id: 'sout', type: 'source',
+        position: vertical ? RF.Position.Bottom : RF.Position.Right,
+        style: { opacity: 0 }
+      })
+    );
+  }
+
+  var nodeTypes = { flow: FlowNode };
+
+  // --- curved edge ----------------------------------------------------------
+  // React Flow ships neither a self-loop nor any edge separation, so the path is
+  // drawn here and handed to BaseEdge, which paints it, lays the label out and
+  // adds the wide invisible stroke every built-in edge is clickable by. The bow
+  // offsets along the normal of the straight line, and a twin runs the opposite
+  // way, so the pair bows to opposite sides for free.
+  var BOW = 46;      // how far a twin bows off the straight line
+  var ENDGAP = 13;   // and how far its endpoints slide, so arrowheads land apart
+  var LOOPGAP = 66;  // how far a self-edge leaves the centre of its own node
+
+  function curvePath(props) {
+    var sx = props.sourceX, sy = props.sourceY, tx = props.targetX, ty = props.targetY;
+    if (props.data && props.data.loop) {
+      var out = props.data.loop;
+      // Off the centre line, so the loop clears its own node body and does not
+      // land its arrowhead on top of whatever else arrives here.
+      if (props.sourcePosition === 'bottom') {
+        sx += LOOPGAP; tx += LOOPGAP;
+        return {
+          d: 'M' + sx + ' ' + sy + ' C' + (sx + out.x) + ' ' + (sy + 26) +
+             ',' + (tx + out.x) + ' ' + (ty - 26) + ',' + tx + ' ' + ty,
+          // On the arc's apex, well clear of the node, where the label's own
+          // background masks the line behind it.
+          x: sx + out.x * 0.75, y: (sy + ty) / 2
+        };
+      }
+      sy += LOOPGAP; ty += LOOPGAP;
+      return {
+        d: 'M' + sx + ' ' + sy + ' C' + (sx + 26) + ' ' + (sy + out.y) +
+           ',' + (tx - 26) + ' ' + (ty + out.y) + ',' + tx + ' ' + ty,
+        x: (sx + tx) / 2, y: sy + out.y * 0.78
+      };
+    }
+    var dx = tx - sx, dy = ty - sy;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len, ny = dx / len;
+    // Slide the whole curve sideways, endpoints included. A twin's normal points
+    // the other way, so the pair separates along its full length.
+    sx += nx * ENDGAP; sy += ny * ENDGAP;
+    tx += nx * ENDGAP; ty += ny * ENDGAP;
+    var cx = (sx + tx) / 2 + nx * BOW;
+    var cy = (sy + ty) / 2 + ny * BOW;
+    return {
+      d: 'M' + sx + ' ' + sy + ' Q' + cx + ' ' + cy + ' ' + tx + ' ' + ty,
+      x: (sx + 2 * cx + tx) / 4, y: (sy + 2 * cy + ty) / 4
+    };
+  }
+
+  function CurveEdge(props) {
+    var c = curvePath(props);
+    return h(RF.BaseEdge, {
+      id: props.id, path: c.d, labelX: c.x, labelY: c.y,
+      label: props.label, style: props.style, markerEnd: props.markerEnd
+    });
+  }
+
+  var edgeTypes = { curve: CurveEdge };
+
+  // --- app ------------------------------------------------------------------
+  function App() {
+    var tabState = useState(tabFromHash), tab = tabState[0], setTab = tabState[1];
+    var dirState = useState('TB'), dir = dirState[0], setDir = dirState[1];
+    var selState = useState(null), sel = selState[0], setSel = selState[1];
+    var mapState = useState(readMinimap), showMap = mapState[0], setShowMap = mapState[1];
+    // Where the reader has dragged things. Empty means dagre's layout, untouched.
+    var movedState = useState({}), moved = movedState[0], setMoved = movedState[1];
+
+    var f = flows[tab];
+
+    useEffect(function () {
+      function syncTab() {
+        setTab(tabFromHash());
+        setSel(null);
+      }
+      addEventListener('hashchange', syncTab);
+      return function () { removeEventListener('hashchange', syncTab); };
+    }, []);
+
+    var laidOut = useMemo(function () { return layout(f.nodeList, f.edgeItems, dir); }, [f, dir]);
+
+    // Selecting anything asks the same question: what leads here?
+    var lit = useMemo(function () {
+      if (!sel) return null;
+      if (sel.kind === 'node') return upstream(f, sel.id);
+      var e = f.edgeById[sel.id];
+      var up = upstream(f, e.from);
+      up.edges[e.id] = true;
+      // Lit, but not a step that leads here: it is where this edge arrives.
+      if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
+      return up;
+    }, [f, sel]);
+
+    var nodes = useMemo(function () {
+      return laidOut.map(function (n) {
+        return Object.assign({}, n, {
+          position: moved[n.id] || n.position,
+          data: Object.assign({}, n.data, {
+            selected: !!sel && sel.kind === 'node' && sel.id === n.id,
+            dim: !!lit && lit.dist[n.id] === undefined
+          })
+        });
+      });
+    }, [laidOut, sel, lit, moved]);
+
+    // Relayout moves every node, so the old viewport frames nothing — and every
+    // hand-placed position belonged to the layout that just went away.
+    var fitView = RF.useReactFlow().fitView;
+    useEffect(function () {
+      setMoved(function (prev) { return Object.keys(prev).length ? {} : prev; });
+      fitView(FIT);
+    }, [f, dir, fitView]);
+
+    var basePos = useMemo(function () {
+      return laidOut.reduce(function (m, n) { m[n.id] = n.position; return m; }, Object.create(null));
+    }, [laidOut]);
+
+    var onNodesChange = useCallback(function (changes) {
+      var dragged = null;
+      changes.forEach(function (c) {
+        if (c.type !== 'position' || !c.position) return;
+        // Mount echoes the layout position back; a node left where dagre put it
+        // is not something to offer a reset from.
+        var base = basePos[c.id];
+        if (base && c.position.x === base.x && c.position.y === base.y) return;
+        dragged = dragged || {};
+        dragged[c.id] = c.position;
+      });
+      if (dragged) {
+        setMoved(function (prev) { return Object.assign({}, prev, dragged); });
+      }
+    }, [basePos]);
+
+    var edges = useMemo(function () {
+      return f.edgeItems.map(function (e) {
+        var on = !lit || lit.edges[e.id];
+        // A twin that runs back up the layout leaves the near side and arrives
+        // at the near side, instead of taking the long way round.
+        var back = e.twinned && (dir === 'TB'
+          ? basePos[e.to].y < basePos[e.from].y
+          : basePos[e.to].x < basePos[e.from].x);
+        // A kind's colour is information and always shows; the accent is state,
+        // so it only paints where the kind has nothing to say.
+        var stroke = edgeKind(e.kind).color || (lit && on ? ACCENT : MUTED);
+        return {
+          id: e.id, source: e.from, target: e.to, label: e.label || undefined,
+          ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
+            ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
+          sourceHandle: back ? 'sback' : 'sout',
+          targetHandle: back ? 'tback' : 'tin',
+          type: e.selfLoop || e.twinned ? 'curve' : 'smoothstep',
+          data: {
+            loop: e.selfLoop ? {
+              x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
+              y: heightOf(f.nodeById[e.from]) / 2 + 60
+            } : null
+          },
+          className: on ? undefined : 'dim',
+          style: {
+            stroke: stroke,
+            strokeWidth: lit && on ? 2 : 1.5,
+            strokeDasharray: edgeKind(e.kind).dash
+          },
+          // The marker id is built from every field here, so an undefined colour
+          // yields a marker that paints nothing. Always name it.
+          markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
+        };
+      });
+    }, [f, lit, basePos, dir]);
+
+    var onNodeClick = useCallback(function (_, node) {
+      setSel({ kind: 'node', id: node.id });
+    }, []);
+    var onEdgeClick = useCallback(function (_, edge) {
+      setSel({ kind: 'edge', id: edge.id });
+    }, []);
+
+    // The hash is what says which tab is open; the hashchange listener above
+    // clears the selection, and the relayout effect clears any hand placement.
+    function openTab(i) { location.hash = tabIds[i]; }
+
+    // Which way this step went. Only lit edges count, so it names the branch
+    // actually taken; a graph that re-converges names both.
+    function branchOut(id) {
+      return unique((f.outgoing[id] || [])
+        .filter(function (e) { return lit.edges[e.id] && e.label; })
+        .map(function (e) { return e.label; })).join(' / ');
+    }
+
+    // The steps that lead here, start first — the reason the highlight lit up.
+    function trail(minDist) {
+      var ids = stepsInto(lit, minDist);
+      if (!ids.length) {
+        return h('p', { className: 'hint' }, 'Nothing leads here. This is a starting point.');
+      }
+      return h('div', { className: 'trail' },
+        h('div', { className: 'trail-label' }, leadIn(ids.length)),
+        h('ol', { className: 'steps' }, ids.map(function (id) {
+          var n = f.nodeById[id];
+          var branch = branchOut(id);
+          function open() { setSel({ kind: 'node', id: id }); }
+          return h('li', {
+            key: id, onClick: open, tabIndex: 0, role: 'button',
+            onKeyDown: function (ev) {
+              if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
+            }
+          },
+            labelOf(f, id),
+            branch ? h('span', { className: 'branch' }, '→ ' + branch) : null,
+            n.ref ? h('span', { className: 'ref' }, n.ref) : null
+          );
+        }))
+      );
+    }
+
+    // Every state of the panel takes the same shape: a title that names the
+    // subject, one meta line of secondary facts, then the body it earns.
+    function panel() {
+      if (sel && sel.kind === 'node') {
+        var n = f.nodeById[sel.id];
+        var kind = kindOf(n.kind);
+        return h(React.Fragment, null,
+          panelHead(n.label || n.id, [
+            tag(KIND_COLOR[kind], kind),
+            n.ref ? h('code', { key: 'ref' }, n.ref) : null
+          ]),
+          h('div', { className: 'panel-body' },
+            n.note ? h('p', { className: 'note' }, n.note) : null,
+            h('p', { className: 'detail' }, n.detail || 'No detail recorded for this step.'),
+            trail(1)
+          )
+        );
+      }
+      if (sel) {
+        var e = f.edgeById[sel.id];
+        // An unlabelled edge has no name of its own, so the transition becomes
+        // the title rather than the word "unlabelled".
+        var move = labelOf(f, e.from) + ' → ' + labelOf(f, e.to);
+        return h(React.Fragment, null,
+          panelHead(e.label || move, [
+            tag(edgeKind(e.kind).color || MUTED, e.kind || 'edge'),
+            e.label ? h('span', { key: 'ends' }, move) : null
+          ]),
+          h('div', { className: 'panel-body' },
+            e.detail
+              ? h('p', { className: 'detail' }, e.detail)
+              : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
+            trail(0)
+          )
+        );
+      }
+      // Nothing selected: the diagram introduces itself. This is where the title
+      // and the summary live, so the header is free to carry the tabs.
+      return h(React.Fragment, null,
+        panelHead(f.title || doc.title || 'Flow', [
+          doc.title && doc.title !== f.title
+            ? h('span', { key: 'doc' }, doc.title) : null,
+          h('span', { key: 'n' }, f.nodeList.length + ' nodes'),
+          h('span', { key: 'e' }, f.edgeItems.length + ' edges')
+        ]),
+        h('div', { className: 'panel-body' },
+          f.summary ? h('p', { className: 'detail' }, f.summary) : null,
+          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there.'),
+          f.problems.length
+            ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
+                return h('li', { key: i }, t);
+              }))
+            : null
+        )
+      );
+    }
+
+    return h(React.Fragment, null,
+      h('header', null,
+        h('div', { className: 'tabs', 'aria-label': flows.length > 1 ? 'Flows' : null },
+          flows.length > 1
+          ? [h('h1', { className: 'flow-title sr-only', key: 'title' }, doc.title || 'Flow')]
+              .concat(flows.map(function (fl, i) {
+              return h('button', {
+                key: i,
+                className: 'tab' + (i === tab ? ' on' : ''),
+                'aria-current': i === tab ? 'page' : null,
+                onClick: function () { openTab(i); }
+              }, fl.title || 'Flow ' + (i + 1));
+            }))
+          : h('h1', { className: 'flow-title' }, f.title || doc.title || 'Flow')),
+        h('button', { onClick: function () { setDir(dir === 'TB' ? 'LR' : 'TB'); } },
+          dir === 'TB' ? 'Left to right' : 'Top to bottom'),
+        h('button', {
+          className: 'minimap-toggle',
+          onClick: function () { writeMinimap(!showMap); setShowMap(!showMap); }
+        }, showMap ? 'Hide minimap' : 'Show minimap'),
+        Object.keys(moved).length
+          ? h('button', { onClick: function () { setMoved({}); } }, 'Reset layout')
+          : null,
+        f.problems.length
+          ? h('span', { className: 'badge bad', title: f.problems.join('\n') },
+              f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : ''))
+          : h('span', {
+              className: 'badge ok',
+              title: f.nodeList.length + ' nodes checked at build time: ids ' +
+                     'unique, kinds known, every edge resolves, every decision ' +
+                     'branches, every path reaches an end.'
+            }, 'Trace valid')
+      ),
+      h('main', { className: sel ? 'has-selection' : '' },
+        h('div', { className: 'canvas' },
+          h(RF.ReactFlow, {
+            nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
+            onNodesChange: onNodesChange,
+            // A click that wobbles still selects; only a real drag moves a node.
+            nodeDragThreshold: 4,
+            onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
+            onPaneClick: function () { setSel(null); },
+            fitView: true, fitViewOptions: FIT,
+            proOptions: { hideAttribution: true },
+            minZoom: 0.1
+          },
+            h(RF.Background, { gap: 16 }),
+            h(RF.Controls, { showInteractive: false }),
+            showMap ? h(RF.MiniMap, {
+              pannable: true, zoomable: true, nodeColor: nodeColorOf
+            }) : null,
+            h(RF.Panel, {
+              position: 'top-right', className: 'edge-legend',
+              role: 'list', 'aria-label': 'Edge legend'
+            }, Object.keys(EDGE_KINDS).map(function (key) {
+              var item = EDGE_KINDS[key];
+              return h('span', { className: 'legend-item', role: 'listitem', key: key },
+                h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
+                  h('line', {
+                    x1: 1, y1: 4, x2: 25, y2: 4, strokeWidth: 2,
+                    stroke: item.color || MUTED, strokeDasharray: item.dash
+                  })
+                ),
+                item.label
+              );
+            }))
+          )
+        ),
+        h('aside', null,
+          sel ? h('button', {
+            className: 'mobile-back', onClick: function () { setSel(null); }
+          }, 'Back to flow') : null,
+          panel()
+        )
+      )
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root'))
+    .render(h(RF.ReactFlowProvider, null, h(App, null)));
+})();
+</script>
+</body>
+</html>

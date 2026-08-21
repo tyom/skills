@@ -1,0 +1,45 @@
+{
+  "title": "Node and edge kind probe",
+  "flows": [
+    {
+      "title": "Fork and join",
+      "summary": "Not a tracing example: invented steps with no refs, here only so every node and edge kind renders once.",
+      "nodes": [
+        { "id": "s", "label": "Start", "kind": "start" },
+        { "id": "f", "label": "Fan out", "kind": "fork", "note": "all three run" },
+        { "id": "a", "label": "Read config", "kind": "io" },
+        { "id": "b", "label": "Load cache", "kind": "store", "note": "warm" },
+        { "id": "c", "label": "Compile assets", "kind": "step" },
+        { "id": "j", "label": "Converge", "kind": "join" },
+        { "id": "d", "label": "All succeeded?", "kind": "decision" },
+        { "id": "ok", "label": "Done", "kind": "success" },
+        { "id": "err", "label": "Failed", "kind": "end" }
+      ],
+      "edges": [
+        { "from": "s", "to": "f" },
+        { "from": "f", "to": "a" }, { "from": "f", "to": "b" }, { "from": "f", "to": "c", "kind": "async" },
+        { "from": "a", "to": "j" }, { "from": "b", "to": "j" }, { "from": "c", "to": "j" },
+        { "from": "j", "to": "d" },
+        { "from": "d", "to": "ok", "label": "yes" },
+        { "from": "d", "to": "err", "label": "no", "kind": "error" }
+      ]
+    },
+    {
+      "title": "State machine",
+      "summary": "Invented states, here only so the state kind, a self-edge and a reverse pair render once.",
+      "nodes": [
+        { "id": "s", "label": "Created", "kind": "start" },
+        { "id": "idle", "label": "Idle", "kind": "state" },
+        { "id": "run", "label": "Running", "kind": "state", "note": "holds the lock" },
+        { "id": "stop", "label": "Stopped", "kind": "end" }
+      ],
+      "edges": [
+        { "from": "s", "to": "idle" },
+        { "from": "idle", "to": "run", "label": "start" },
+        { "from": "run", "to": "idle", "label": "pause" },
+        { "from": "run", "to": "run", "label": "tick", "kind": "retry" },
+        { "from": "run", "to": "stop", "label": "halt" }
+      ]
+    }
+  ]
+}
