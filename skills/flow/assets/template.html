@@ -355,7 +355,7 @@
   function nodeColorOf(n) { return KIND_COLOR[n.data.kind]; }
 
   // Private to whoever opens the page, and absent in a locked-down browser.
-  var MAP_KEY = 'flow:minimap', GRID_KEY = 'flow:grid';
+  var MAP_KEY = 'flow:minimap';
   function readToggle(key) {
     try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
   }
@@ -836,8 +836,6 @@
     var selState = useState(null), sel = selState[0], setSel = selState[1];
     var mapState = useState(function () { return readToggle(MAP_KEY); });
     var showMap = mapState[0], setShowMap = mapState[1];
-    var gridState = useState(function () { return readToggle(GRID_KEY); });
-    var showGrid = gridState[0], setShowGrid = gridState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
     var exportRef = useRef(null);
     // Where the reader has dragged things. Empty means dagre's layout, untouched.
@@ -1114,9 +1112,6 @@
           className: 'minimap-toggle',
           onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
         }, showMap ? 'Hide minimap' : 'Show minimap'),
-        h('button', {
-          onClick: function () { writeToggle(GRID_KEY, !showGrid); setShowGrid(!showGrid); }
-        }, showGrid ? 'Hide grid' : 'Show grid'),
         Object.keys(moved).length
           ? h('button', { onClick: function () { setMoved({}); } }, 'Reset layout')
           : null,
@@ -1153,7 +1148,6 @@
             proOptions: { hideAttribution: true },
             minZoom: 0.1
           },
-            showGrid ? h(RF.Background, { gap: 16 }) : null,
             h(RF.Controls, { showInteractive: false }),
             showMap ? h(RF.MiniMap, {
               pannable: true, zoomable: true, nodeColor: nodeColorOf
