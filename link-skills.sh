@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Dev helper: symlink this repo's skills into ~/.claude/skills for local testing.
+# Dev helper: symlink this repo's skills into each agent's skills dir for local testing.
 # ponytail: symlinks, so edits to SKILL.md are live — no build, no reinstall.
 set -euo pipefail
 
-GLOBAL="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
+# Every agent reads its own dir; Codex won't see ~/.claude/skills.
+SKILL_DIRS=("${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}" "${CODEX_SKILLS_DIR:-$HOME/.codex/skills}")
+GLOBAL="${SKILL_DIRS[0]}"
 REPO_SKILLS="$(cd "$(dirname "${BASH_SOURCE[0]}")/skills" && pwd -P)"
 
 if [ -t 1 ]; then G=$'\e[32m'; Y=$'\e[33m'; D=$'\e[2m'; B=$'\e[1m'; R=$'\e[0m'
@@ -65,7 +67,7 @@ unlink_one() {
 }
 
 cmd_status() {
-  printf '%s%s%s → %s~/.claude/skills%s\n\n' "$B" "$REPO_SKILLS" "$R" "$D" "$R"
+  printf '%s%s%s → %s%s%s\n\n' "$B" "$REPO_SKILLS" "$R" "$D" "$GLOBAL" "$R"
   local n st absent=()
   for n in $(repo_skills); do
     st=$(state_of "$n"); render "$st" "$n"
@@ -113,10 +115,10 @@ cmd_selftest() {
   rm -rf "$tmp"; echo "selftest ok"
 }
 
-case "${1:-status}" in
-  status)   cmd_status ;;
-  link)     shift; cmd_link "$@" ;;
-  unlink)   shift; cmd_unlink "$@" ;;
+cmd="${1:-status}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  status|link|unlink)
+    for GLOBAL in "${SKILL_DIRS[@]}"; do "cmd_$cmd" "$@"; done ;;
   selftest) cmd_selftest ;;
   *) echo "usage: $0 [status | link [-f] [names...] | unlink [names...]]" >&2; exit 2 ;;
 esac

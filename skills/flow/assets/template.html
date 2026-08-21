@@ -1,0 +1,1187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow</title>
+<style>/*VENDOR_CSS*/</style>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #14171a; --muted: #6b7280;
+    --line: #e3e6ea; --accent: #2563eb;
+    --start: #059669; --step: #64748b; --decision: #d97706;
+    --io: #2563eb; --store: #7c3aed; --end: #dc2626; --fork: #0d9488; --state: #db2777;
+    --success: #059669; --join: var(--fork);
+    --ok: var(--success); --bad: var(--end);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
+      --line: #2a3038; --accent: #60a5fa;
+      --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
+      --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
+      --success: #34d399;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #root { display: flex; flex-direction: column; }
+
+  header {
+    display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap;
+    padding: 0 16px; min-height: 45px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  /* The title occupies the tab rail for a single diagram; with several diagrams,
+     the rail becomes the navigation and keeps the controls on the right. */
+  header .tabs { display: flex; gap: 2px; flex: 1; min-width: 120px; }
+  .flow-title {
+    align-self: center; margin: 0; overflow: hidden; color: var(--ink);
+    font-size: 14px; font-weight: 600; line-height: 1.25;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  header button {
+    font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
+    align-self: center; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  header button:hover { border-color: var(--accent); }
+  button:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px;
+  }
+  .export { position: relative; display: flex; align-self: center; }
+  .export-menu {
+    position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
+    min-width: 142px; padding: 4px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 7px;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
+  }
+  header .export-menu button {
+    display: block; width: 100%; padding: 6px 8px; text-align: left;
+    background: none; border: 0;
+  }
+  header .export-menu button:hover { background: var(--bg); }
+  /* A tab is navigation, not an option: no box, and its indicator sits down on
+     the header's own bottom rule so the strip reads as the edge of the canvas. */
+  header .tab {
+    align-self: stretch; margin-bottom: -1px; padding: 0 11px;
+    font-size: 14px; color: var(--muted); background: none;
+    border: none; border-bottom: 2px solid transparent; border-radius: 0;
+  }
+  header .tab:hover { color: var(--ink); border-color: var(--line); }
+  header .tab.on { color: var(--ink); font-weight: 500; border-bottom-color: var(--accent); }
+  .edge-legend {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+    max-width: calc(100% - 30px); padding: 7px 9px;
+    color: var(--muted); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; font-size: 11px; white-space: nowrap; pointer-events: none;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
+  .badge {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid currentColor; cursor: help; align-self: center;
+  }
+  .badge.ok { color: var(--ok); padding: 3px 7px; }
+  .badge.bad { color: var(--bad); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  .canvas { flex: 1; min-width: 0; }
+
+  aside {
+    width: clamp(272px, 26vw, 348px); flex: none; display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel); border-left: 1px solid var(--line);
+  }
+  .mobile-back { display: none; }
+  /* What the panel is about holds still; only the evidence for it scrolls. */
+  .panel-head { flex: none; padding: 20px 20px 16px; border-bottom: 1px solid var(--line); }
+  .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 17px 20px 28px; }
+
+  aside h2 {
+    margin: 0; font-size: 22px; line-height: 1.2; font-weight: 600;
+    letter-spacing: -.02em; overflow-wrap: anywhere;
+  }
+  /* One dense line under the title carrying every secondary fact: what kind of
+     thing this is, and where it lives. Nothing above the heading. */
+  aside .meta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+    margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--muted);
+  }
+  aside .meta .sep { opacity: .45; }
+  aside .meta code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; overflow-wrap: anywhere;
+  }
+  aside .tag { display: inline-flex; align-items: center; gap: 5px; }
+  aside .tag .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+  aside .note { margin: 0 0 9px; font-size: 14px; font-style: italic; color: var(--muted); }
+  aside .detail { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+  aside .hint { margin: 15px 0 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+  aside .trail { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
+  aside .trail-label { font-size: 12px; color: var(--muted); }
+  /* A spine through the numbers: this is one path in order, not a bag of links.
+     Each number sits on the panel colour and masks the line behind it. */
+  aside .steps {
+    position: relative; margin: 12px 0 0; padding: 0 0 0 26px;
+    list-style: none; counter-reset: step;
+  }
+  aside .steps::before {
+    content: ''; position: absolute; left: 7px; top: 4px; bottom: 14px;
+    width: 1px;
+    /* --line is a border against a panel and disappears as a standalone rule;
+       the spine has to carry the eye down five items. */
+    background: color-mix(in srgb, var(--muted) 40%, transparent);
+  }
+  aside .steps li { position: relative; padding: 4px 0 10px; cursor: pointer; }
+  aside .steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: -26px; top: 4px; width: 15px; padding: 2px 0;
+    background: var(--panel); text-align: center;
+    font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  aside .steps li:hover, aside .steps li:hover::before { color: var(--accent); }
+  aside .steps li:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
+  }
+  aside .steps .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
+  aside .steps .ref {
+    display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* The badge is loud about a broken trace, so its explanation cannot whisper. */
+  aside .problems {
+    margin: 20px 0 0; padding: 11px 13px 11px 28px; border-radius: 8px;
+    font-size: 14px; color: var(--bad); border: 1px solid var(--bad);
+    background: color-mix(in srgb, var(--bad) 9%, transparent);
+  }
+  aside .problems li { margin: 3px 0; }
+
+  .node {
+    border-radius: 8px; text-align: left; cursor: grab; transition: opacity .15s;
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 4px solid var(--step);
+  }
+  .node:active { cursor: grabbing; }
+  .node .body { padding: 8px 12px; }
+  .node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .node.dim { opacity: .22; }
+  .react-flow__edge { transition: opacity .15s; }
+  .react-flow__edge.dim { opacity: .1; }
+  .react-flow__node:focus-visible .node {
+    outline: 3px solid var(--accent); outline-offset: 4px;
+  }
+  .react-flow__edge:focus-visible .react-flow__edge-path {
+    stroke-width: 4 !important;
+  }
+  .node .label { font-weight: 500; }
+  .node .ref {
+    display: flex; margin-top: 2px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* The line number holds its width; the name is the only thing that can give. */
+  .node .ref .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node .ref .line { flex: none; }
+  .node .note { margin-top: 2px; font-size: 12px; font-style: italic; color: var(--muted); }
+  /* A state is a pill: rounded all the way, no leading bar, label centred —
+     the UML rounded rectangle, which reads as "a place to be" rather than
+     "a thing that happens". */
+  .node-state {
+    border: 1px solid var(--state); border-left-width: 1px; border-radius: 999px;
+  }
+  .node-state .body { padding: 8px 22px; text-align: center; }
+  .node-start { border-left-color: var(--start); }
+  /* A decision is a hexagon: the flowchart convention without a diamond's wasted
+     width. clip-path cuts any border or shadow, so the outer box *is* the outline
+     and the inner body sits 1px inside it. Handles stay on the clipped edges. */
+  .node-decision {
+    --point: 18px;
+    border: none; border-radius: 0; padding: 1px;
+    background: var(--decision);
+    clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
+                       calc(100% - var(--point)) 100%, var(--point) 100%);
+  }
+  .node-decision .body {
+    padding: 8px 26px;
+    background: var(--panel);
+    clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
+                       calc(100% - var(--point)) 100%, var(--point) 100%);
+  }
+  .node-decision.selected { background: var(--accent); padding: 2px; box-shadow: none; }
+  .node-io { border-left-color: var(--io); }
+  .node-store { border-left-color: var(--store); border-radius: 8px 8px 16px 16px; }
+  .node-end { border-left-color: var(--end); }
+  .node-success { border-left-color: var(--success); }
+  /* A fork or join is a bar, not a box: "all of these happen" reads at a glance
+     where a fourth box colour would not. */
+  .node-fork, .node-join {
+    border: none; border-radius: 3px; background: var(--fork);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .node-fork .body, .node-join .body {
+    padding: 0 10px; font-size: 11px; font-weight: 700; color: var(--panel);
+    letter-spacing: .06em; text-transform: uppercase;
+    overflow: hidden; white-space: nowrap;
+  }
+  .node-fork .label, .node-join .label { overflow: hidden; text-overflow: ellipsis; }
+  /* A bar is pinned to its height, so only the label fits. The note and the ref
+     are still there — they read in the panel. */
+  .node-fork .ref, .node-join .ref, .node-fork .note, .node-join .note { display: none; }
+  .node-fork.selected, .node-join.selected { box-shadow: 0 0 0 2px var(--accent); }
+
+  /* Labels are rendered into React Flow's label layer, above every path, so a
+     line crossing the band cannot strike through the text that names it. */
+  .edge-label {
+    position: absolute;
+    font-size: 11px; line-height: 1.4; color: var(--muted);
+    background: var(--bg); padding: 0 4px; border-radius: 3px;
+    white-space: nowrap; cursor: pointer; pointer-events: all;
+  }
+  .edge-label:hover { color: var(--ink); }
+  /* Tracks .react-flow__edge.dim: a label must not outshout its own line. */
+  .edge-label.dim { opacity: 0.1; }
+  .react-flow__attribution { display: none; }
+  /* React Flow ships a light-only chrome; re-point it at the theme tokens. */
+  .react-flow__controls-button {
+    background: var(--panel); border-bottom: 1px solid var(--line); fill: var(--ink);
+  }
+  .react-flow__controls-button:hover { background: var(--bg); }
+  .react-flow__minimap { background: var(--panel); border: 1px solid var(--line); }
+  .react-flow__minimap-mask { fill: var(--bg); fill-opacity: .6; }
+
+  @media (max-width: 720px) {
+    header { gap: 6px; padding: 0 10px; }
+    header .tabs { min-width: 0; overflow-x: auto; }
+    header .tab { flex: none; min-height: 44px; }
+    header button:not(.tab) { min-height: 44px; }
+    header .minimap-toggle { display: none; }
+    .badge { white-space: nowrap; }
+
+    main.has-selection .canvas, main:not(.has-selection) aside { display: none; }
+    aside { width: 100%; border-left: 0; }
+    .mobile-back {
+      display: block; flex: none; align-self: flex-start;
+      min-height: 44px; margin: 12px 16px 0;
+      color: var(--ink); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 6px;
+      font: inherit; font-weight: 500; padding: 7px 12px; cursor: pointer;
+    }
+    .panel-head { padding: 16px; }
+    .panel-body { padding: 16px 16px 28px; }
+    .edge-legend, .react-flow__minimap { display: none; }
+    .react-flow__controls-button { width: 44px; height: 44px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node, .react-flow__edge { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script id="flow-data" type="application/json">__FLOW_DATA__</script>
+<script>/*VENDOR_JS*/</script>
+
+<script>
+(function () {
+  'use strict';
+
+  var h = React.createElement;
+  var RF = ReactFlow;
+  var useState = React.useState, useMemo = React.useMemo,
+      useCallback = React.useCallback, useEffect = React.useEffect,
+      useRef = React.useRef;
+
+  // Shared so the load fit and every relayout fit agree; the two drifting apart
+  // frames the graph differently depending on how you got there.
+  var FIT = { padding: 0.15 };
+
+  function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
+
+  // ponytail: estimated from the character count rather than measured. An 11px
+  // proportional font puts this a few pixels out, which the gaps absorb.
+  // Tracks .edge-label's font-size and horizontal padding; change those together.
+  function labelWidth(text) { return text.length * 5.9 + 10; }
+
+  // Estimated from the lines the body will hold: padding + label, then a note
+  // and a ref if present. dagre spaces ranks off this, so a short guess crowds
+  // every edge between them.
+  function heightOf(n) {
+    if (isBar(n.kind)) return 22;
+    return 37 + (n.note ? 18 : 0) + (n.ref ? 17 : 0);
+  }
+
+  // SVG fills and the minimap don't resolve CSS vars, so the palette is read
+  // out of the stylesheet once. Changing this list or any .node-* rule: build
+  // assets/kinds-probe.json, which renders every kind once, and look at it.
+  var KINDS = ['start', 'step', 'decision', 'io', 'store', 'end', 'success', 'fork', 'join', 'state'];
+  var css = getComputedStyle(document.documentElement);
+  var KIND_COLOR = KINDS.reduce(function (m, k) {
+    m[k] = css.getPropertyValue('--' + k).trim();
+    return m;
+  }, Object.create(null));
+  var ACCENT = css.getPropertyValue('--accent').trim();
+  var MUTED = css.getPropertyValue('--muted').trim();
+
+  // Unknown kinds fall back to 'step'; build.sh calls one out as a problem.
+  function kindOf(kind) { return KINDS.indexOf(kind) === -1 ? 'step' : kind; }
+  function isBar(kind) { return kind === 'fork' || kind === 'join'; }
+
+  // Everything an edge kind means, in one row: its legend entry, its colour and
+  // its dash. `progress: false` marks a kind that does not carry the flow
+  // forward, so the upstream walk stops rather than crossing it — a retry points
+  // back around a loop, and walking it would light sibling outcomes from earlier
+  // iterations. Insertion order is the legend's order.
+  var EDGE_KINDS = {
+    '': { label: 'Flow' },
+    async: { label: 'Async', dash: '7 5' },
+    retry: { label: 'Retry', color: KIND_COLOR.decision, dash: '2 5', progress: false },
+    error: { label: 'Error', color: KIND_COLOR.end }
+  };
+  function edgeKind(kind) { return EDGE_KINDS[kind] || EDGE_KINDS['']; }
+
+  // Closes over nothing, so the minimap's memoised nodes keep their identity.
+  function nodeColorOf(n) { return KIND_COLOR[n.data.kind]; }
+
+  // Private to whoever opens the page, and absent in a locked-down browser.
+  var MAP_KEY = 'flow:minimap';
+  function readToggle(key) {
+    try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
+  }
+  function writeToggle(key, on) {
+    try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* no store */ }
+  }
+
+  function fileName(title, ext) {
+    var base = (title || 'flow').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return (base || 'flow') + '.' + ext;
+  }
+
+  function download(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url; link.download = name;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportBounds(nodes, root) {
+    var box = nodes.reduce(function (b, n) {
+      var w = n.width || n.data.width || 0, ht = n.height || n.data.height || 0;
+      b.x1 = Math.min(b.x1, n.position.x); b.y1 = Math.min(b.y1, n.position.y);
+      b.x2 = Math.max(b.x2, n.position.x + w); b.y2 = Math.max(b.y2, n.position.y + ht);
+      return b;
+    }, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+    root.querySelectorAll('.react-flow__edge').forEach(function (edge) {
+      try {
+        var e = edge.getBBox();
+        box.x1 = Math.min(box.x1, e.x); box.y1 = Math.min(box.y1, e.y);
+        box.x2 = Math.max(box.x2, e.x + e.width); box.y2 = Math.max(box.y2, e.y + e.height);
+      } catch (ignore) { /* detached SVG */ }
+    });
+    return box;
+  }
+
+  function svgExport(nodes, title) {
+    var source = document.querySelector('.canvas .react-flow');
+    if (!source) throw new Error('Flow canvas not found');
+    var clone = source.cloneNode(true), bounds = exportBounds(nodes, source), pad = 32;
+    var graphWidth = Math.ceil(bounds.x2 - bounds.x1 + pad * 2);
+    var graphHeight = Math.ceil(bounds.y2 - bounds.y1 + pad * 2);
+    var width = Math.max(640, graphWidth), headHeight = 64, height = graphHeight + headHeight;
+    var theme = getComputedStyle(document.documentElement);
+    var bodyStyle = getComputedStyle(document.body);
+    var sheet = document.createElement('div'), head = document.createElement('div');
+    var heading = document.createElement('div'), legend = source.querySelector('.edge-legend').cloneNode(true);
+    sheet.style.width = width + 'px'; sheet.style.height = height + 'px';
+    sheet.style.background = theme.getPropertyValue('--bg');
+    sheet.style.color = theme.getPropertyValue('--ink');
+    sheet.style.fontFamily = bodyStyle.fontFamily;
+    sheet.style.fontSize = bodyStyle.fontSize;
+    sheet.style.lineHeight = bodyStyle.lineHeight;
+    head.style.cssText = 'height:' + headHeight + 'px;display:flex;align-items:center;' +
+      'justify-content:space-between;gap:24px;padding:0 20px;border-bottom:1px solid ' +
+      theme.getPropertyValue('--line');
+    heading.textContent = title;
+    heading.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
+      'font-size:16px;font-weight:600;';
+    legend.classList.remove('react-flow__panel');
+    legend.removeAttribute('style');
+    legend.style.display = 'flex';
+    head.appendChild(heading); head.appendChild(legend);
+    clone.style.width = width + 'px'; clone.style.height = graphHeight + 'px';
+    clone.style.background = theme.getPropertyValue('--bg');
+    clone.style.color = theme.getPropertyValue('--ink');
+    clone.style.fontFamily = bodyStyle.fontFamily;
+    clone.style.fontSize = bodyStyle.fontSize;
+    clone.style.lineHeight = bodyStyle.lineHeight;
+    clone.querySelectorAll('.react-flow__controls, .react-flow__minimap, .react-flow__panel')
+      .forEach(function (el) { el.remove(); });
+    clone.querySelector('.react-flow__viewport').style.transform =
+      'translate(' + (pad + (width - graphWidth) / 2 - bounds.x1) + 'px,' +
+      (pad - bounds.y1) + 'px) scale(1)';
+    sheet.appendChild(head); sheet.appendChild(clone);
+    var styles = Array.from(document.querySelectorAll('style'))
+      .map(function (style) { return style.textContent; }).join('\n');
+    var body = new XMLSerializer().serializeToString(sheet);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width +
+      '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' +
+      '<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">' +
+      '<style>' + styles.replace(/<\/style/gi, '<\\/style') + '</style>' + body +
+      '</div></foreignObject></svg>';
+    return {
+      blob: new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
+      dataUrl: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+      width: width, height: height
+    };
+  }
+
+  function exportFlow(nodes, title, format) {
+    var image = svgExport(nodes, title);
+    if (format === 'svg') {
+      download(image.blob, fileName(title, 'svg'));
+      return Promise.resolve();
+    }
+    return new Promise(function (resolve, reject) {
+      var preview = new Image();
+      preview.crossOrigin = 'anonymous';
+      preview.onload = function () {
+        var scale = Math.min(2, 16000 / image.width, 16000 / image.height,
+          Math.sqrt(100000000 / (image.width * image.height)));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(image.width * scale));
+        canvas.height = Math.max(1, Math.floor(image.height * scale));
+        var context = canvas.getContext('2d');
+        context.scale(scale, scale); context.drawImage(preview, 0, 0);
+        canvas.toBlob(function (blob) {
+          if (!blob) { reject(new Error('PNG encoding failed')); return; }
+          download(blob, fileName(title, 'png')); resolve();
+        }, 'image/png');
+      };
+      preview.onerror = function () { reject(new Error('SVG rendering failed')); };
+      preview.src = image.dataUrl;
+    });
+  }
+
+  var doc = JSON.parse(document.getElementById('flow-data').textContent);
+  if (doc.title) document.title = doc.title;
+
+  // Each tab is an independent graph: its own ids, its own validation, its own
+  // adjacency. Nothing crosses between them. build.sh normalises the one-diagram
+  // shorthand into this array, so there is always at least one.
+  function prepare(flow) {
+    var nodeList = flow.nodes || [], edgeList = flow.edges || [];
+    var known = nodeList.reduce(function (m, n) { m[n.id] = true; return m; }, Object.create(null));
+
+    var edgeItems = edgeList
+      .filter(function (e) { return known[e.from] && known[e.to]; })
+      .map(function (e, i) {
+        return {
+          id: 'e' + i, from: e.from, to: e.to,
+          label: e.label || '', kind: e.kind || '', detail: e.detail || ''
+        };
+      });
+
+    var incoming = Object.create(null), outgoing = Object.create(null);
+    edgeItems.forEach(function (e) {
+      (incoming[e.to] || (incoming[e.to] = [])).push(e);
+      (outgoing[e.from] || (outgoing[e.from] = [])).push(e);
+    });
+
+    return {
+      title: flow.title || '', summary: flow.summary || '',
+      nodeList: nodeList, edgeItems: edgeItems,
+      // build.sh checked this graph and wrote its verdict in, so the badge on
+      // the page and the build output cannot disagree.
+      problems: flow.problems || [],
+      incoming: incoming, outgoing: outgoing,
+      edgeById: edgeItems.reduce(function (m, e) { m[e.id] = e; return m; }, Object.create(null)),
+      nodeById: nodeList.reduce(function (m, n) { m[n.id] = n; return m; }, Object.create(null))
+    };
+  }
+
+  var flows = doc.flows.map(prepare);
+  var usedTabIds = Object.create(null);
+  var tabIds = flows.map(function (f, i) {
+    var fallback = 'flow-' + (i + 1);
+    var base = (f.title || fallback).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
+    // Two flows can share a title, and the hash has to address one tab only.
+    var id = base, n = i;
+    while (usedTabIds[id]) id = base + '-' + (++n);
+    usedTabIds[id] = true;
+    return id;
+  });
+
+  function tabFromHash() {
+    return Math.max(0, tabIds.indexOf(location.hash.slice(1)));
+  }
+
+  function unique(a) { return Array.from(new Set(a)); }
+
+  // --- what leads here ------------------------------------------------------
+  // Everything on a forward path into nodeId, by hop count. An edge kind that
+  // does not carry the flow forward is not crossed; see EDGE_KINDS.
+  function upstream(f, nodeId) {
+    var edges = Object.create(null), dist = Object.create(null);
+    var queue = [nodeId];
+    dist[nodeId] = 0;
+    while (queue.length) {
+      var cur = queue.shift();
+      (f.incoming[cur] || []).forEach(function (e) {
+        if (edgeKind(e.kind).progress === false) return;
+        edges[e.id] = true;
+        if (dist[e.from] === undefined) {
+          dist[e.from] = dist[cur] + 1;
+          queue.push(e.from);
+        }
+      });
+    }
+    return { edges: edges, dist: dist };
+  }
+
+  // Furthest hop first, so the list reads start-to-here.
+  function stepsInto(lit, minDist) {
+    return Object.keys(lit.dist)
+      .filter(function (id) { return lit.dist[id] >= minDist; })
+      .sort(function (a, b) { return lit.dist[b] - lit.dist[a]; });
+  }
+
+  function labelOf(f, id) {
+    return (f.nodeById[id] && f.nodeById[id].label) || id;
+  }
+
+  function leadIn(n) {
+    return n === 1 ? '1 step leads here' : n + ' steps lead here';
+  }
+
+  // The separators live here, so an absent fact never leaves a stray dot behind.
+  function metaRow(parts) {
+    var out = [];
+    parts.filter(Boolean).forEach(function (part, i) {
+      if (i) out.push(h('span', { className: 'sep', key: 'sep' + i }, '\u00b7'));
+      out.push(part);
+    });
+    return h('div', { className: 'meta' }, out);
+  }
+
+  function tag(color, text) {
+    return h('span', { className: 'tag', key: 'tag' },
+      h('span', { className: 'dot', style: { background: color } }), text);
+  }
+
+  function panelHead(title, parts) {
+    return h('div', { className: 'panel-head' },
+      h('h2', null, title),
+      metaRow(parts)
+    );
+  }
+
+  // --- layout ---------------------------------------------------------------
+  // dagre owns every coordinate; the flow data carries none.
+  // Labels are laid out too, not placed afterwards. An edge that carries one is
+  // given its size here, so dagre reserves a slot for it on that edge's own
+  // route: no two labels can land on each other, and none lands on a node.
+  var LABELH = 20;
+
+  // dagre ends a route where it crosses the node's rectangle, which for a lane
+  // far to one side is the node's own corner — the line then reads as leaving
+  // the side of the box rather than the face the flow runs off. Both ends are
+  // moved onto that face, inset far enough to clear the rounding.
+  var INSET = 16;
+
+  function snapEnds(pts, src, tgt, vertical) {
+    var out = pts.slice();
+    out[0] = onFace(src, out[1], vertical);
+    out[out.length - 1] = onFace(tgt, out[out.length - 2], vertical);
+    return out;
+  }
+
+  function onFace(node, toward, vertical) {
+    // run: the axis the flow travels on, which the point is pinned to the face of,
+    // picking the face the flow runs off so a back edge leaves the top. across:
+    // the face's own axis, which the point slides along, inset from the corners.
+    var run = vertical ? 'y' : 'x', across = vertical ? 'x' : 'y';
+    var half = { x: node.width / 2, y: node.height / 2 };
+    var inset = Math.min(INSET, half[across] / 2);
+    var p = {};
+    p[run] = node[run] + (toward[run] < node[run] ? -1 : 1) * half[run];
+    p[across] = clamp(toward[across], node[across] - half[across] + inset,
+                                      node[across] + half[across] - inset);
+    return p;
+  }
+
+  function layout(nodes, edges, dir) {
+    // A multigraph, so two edges between the same pair stay two edges — they get
+    // their own route and their own label slot instead of sharing one.
+    var g = new dagre.graphlib.Graph({ multigraph: true });
+    g.setGraph({ rankdir: dir, nodesep: 52, ranksep: 96, marginx: 24, marginy: 24 });
+    g.setDefaultEdgeLabel(function () { return {}; });
+    nodes.forEach(function (n) {
+      g.setNode(n.id, { width: widthOf(n.kind), height: heightOf(n) });
+    });
+    // dagre would route a self-edge too, but squared off like any other. It is
+    // held back and drawn as an arc instead; see loopPath.
+    var routed = edges.filter(function (e) { return e.from !== e.to; });
+    routed.forEach(function (e) {
+      g.setEdge(e.from, e.to, e.label
+        ? { width: labelWidth(e.label), height: LABELH, labelpos: 'c' }
+        : {}, e.id);
+    });
+    dagre.layout(g);
+
+    var routes = Object.create(null), vertical = dir === 'TB';
+    routed.forEach(function (e) {
+      var d = g.edge({ v: e.from, w: e.to, name: e.id });
+      if (!d) return;
+      var ends = snapEnds(d.points, g.node(e.from), g.node(e.to), vertical);
+      routes[e.id] = {
+        // Drawn once here, not per render: a route only moves when the layout does.
+        path: routePath(orthogonal(ends, vertical)),
+        // dagre puts the label slot on the route, so the line runs under the
+        // label and the label's own background masks it.
+        label: d.x === undefined ? null : { x: d.x, y: d.y }
+      };
+    });
+
+    return {
+      routes: routes,
+      nodes: nodes.map(function (n) {
+        // dagre leaves a leaf node's declared size alone, so read it back
+        // rather than deriving it twice.
+        var p = g.node(n.id), w = p.width, ht = p.height, kind = kindOf(n.kind);
+        return {
+          id: n.id,
+          type: 'flow',
+          ariaLabel: (n.label || n.id) + ', ' + kind +
+            '. Select to inspect its path and details.',
+          position: { x: p.x - w / 2, y: p.y - ht / 2 },
+          // Declared, not measured — the minimap draws its rects before layout settles.
+          width: w, height: ht,
+          data: {
+            width: w,
+            // Only a bar is pinned to its height; a box grows with a wrapped label.
+            height: isBar(n.kind) ? ht : null,
+            label: n.label || n.id,
+            kind: kind,
+            note: n.note || '',
+            ref: n.ref || '',
+            detail: n.detail || '',
+            dir: dir
+          }
+        };
+      })
+    };
+  }
+
+  // --- node -----------------------------------------------------------------
+  // A node has room for the file and the line, not the path to it. The full ref
+  // is one click away in the panel, which is where a directory is worth reading.
+  function refLine(ref) {
+    var line = /:\d+$/.exec(ref);
+    var name = (line ? ref.slice(0, line.index) : ref).split('/').pop();
+    return h('div', { className: 'ref' },
+      h('span', { className: 'name', key: 'n' }, name),
+      line ? h('span', { className: 'line', key: 'l' }, line[0]) : null);
+  }
+
+  function FlowNode(props) {
+    var d = props.data;
+    var vertical = d.dir === 'TB';
+    return h('div', {
+      className: 'node node-' + d.kind + (d.selected ? ' selected' : '') + (d.dim ? ' dim' : ''),
+      style: d.height ? { width: d.width, height: d.height } : { width: d.width }
+    },
+      h(RF.Handle, {
+        id: 'tin', type: 'target',
+        position: vertical ? RF.Position.Top : RF.Position.Left,
+        style: { opacity: 0 }
+      }),
+      h('div', { className: 'body' },
+        h('div', { className: 'label' }, d.label),
+        d.note ? h('div', { className: 'note' }, d.note) : null,
+        d.ref ? refLine(d.ref) : null
+      ),
+      h(RF.Handle, {
+        id: 'sout', type: 'source',
+        position: vertical ? RF.Position.Bottom : RF.Position.Right,
+        style: { opacity: 0 }
+      })
+    );
+  }
+
+  var nodeTypes = { flow: FlowNode };
+
+  // --- self-loop ------------------------------------------------------------
+  // dagre can route an edge back to its own node, but squares it off like any
+  // other route. A self-transition reads better as an arc, so it is drawn here
+  // off the node's own side and kept out of the graph.
+  var LOOPGAP = 66;
+
+  function loopPath(props) {
+    // bow: the axis the arc swings out on, pushed clear of the node body so the
+    // loop does not land its arrowhead on whatever else arrives here. from/to
+    // run along the other axis, between the node's two handles.
+    var vertical = props.sourcePosition === 'bottom';
+    var out = vertical ? props.data.loop.x : props.data.loop.y;
+    var bow = (vertical ? props.sourceX : props.sourceY) + LOOPGAP;
+    var from = vertical ? props.sourceY : props.sourceX;
+    var to = vertical ? props.targetY : props.targetX;
+    function at(b, r) { return vertical ? b + ' ' + r : r + ' ' + b; }
+    return {
+      path: 'M' + at(bow, from) + ' C' + at(bow + out, from + 26) +
+            ',' + at(bow + out, to - 26) + ',' + at(bow, to),
+      // On the arc's apex, well clear of the node, where the label's own
+      // background masks the line behind it.
+      label: vertical
+        ? { x: bow + out * 0.75, y: (from + to) / 2 }
+        : { x: (from + to) / 2, y: bow + out * 0.78 }
+    };
+  }
+
+  // --- labels ---------------------------------------------------------------
+  // A label sits in its own layer above the paths, so it is drawn last whatever
+  // order the edges are in, and it stays clickable as the edge it belongs to.
+  function edgeLabel(props, d, at) {
+    if (!props.label || !at) return null;
+    return h(RF.EdgeLabelRenderer, null,
+      h('div', {
+        className: 'edge-label' + (d.dim ? ' dim' : ''),
+        style: { transform: 'translate(-50%, -50%) translate(' + at.x + 'px,' + at.y + 'px)' },
+        onClick: d.select
+      }, props.label));
+  }
+
+  // --- edge ------------------------------------------------------------------
+  // A routed path is dagre's own, so it bends around whatever stands between
+  // its ends instead of cutting through it. Corners are rounded on the way out.
+  var CORNER = 10;
+
+  // dagre hands back a polyline whose hops run diagonally wherever the route
+  // shifts lane between ranks. The diagram is orthogonal everywhere else, so
+  // each hop is turned into the same step the old router drew — out, across at
+  // the halfway line, then on — which also lands every arrowhead square on.
+  function orthogonal(pts, vertical) {
+    var out = [pts[0]];
+    for (var i = 1; i < pts.length; i++) {
+      var a = out[out.length - 1], b = pts[i];
+      if (a.x !== b.x && a.y !== b.y) {
+        var mid = vertical ? (a.y + b.y) / 2 : (a.x + b.x) / 2;
+        out.push(vertical ? { x: a.x, y: mid } : { x: mid, y: a.y });
+        out.push(vertical ? { x: b.x, y: mid } : { x: mid, y: b.y });
+      }
+      out.push(b);
+    }
+    // A point that carries no turn is a corner radius waiting to round nothing.
+    return out.filter(function (p, i) {
+      var a = out[i - 1], b = out[i + 1];
+      if (!a || !b) return true;
+      if (p.x === a.x && p.y === a.y) return false;
+      return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
+    });
+  }
+
+  function routePath(pts) {
+    if (!pts || pts.length < 2) return '';
+    var d = 'M' + pts[0].x + ' ' + pts[0].y;
+    for (var i = 1; i < pts.length - 1; i++) {
+      var a = pts[i - 1], c = pts[i], b = pts[i + 1];
+      var r = Math.min(CORNER, dist(a, c) / 2, dist(c, b) / 2);
+      if (r < 1) { d += ' L' + c.x + ' ' + c.y; continue; }
+      var s = towards(c, a, r), e = towards(c, b, r);
+      d += ' L' + s.x + ' ' + s.y + ' Q' + c.x + ' ' + c.y + ',' + e.x + ' ' + e.y;
+    }
+    var last = pts[pts.length - 1];
+    return d + ' L' + last.x + ' ' + last.y;
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+
+  function towards(from, to, by) {
+    var len = dist(from, to) || 1;
+    return { x: from.x + (to.x - from.x) * by / len, y: from.y + (to.y - from.y) * by / len };
+  }
+
+  function FlowEdge(props) {
+    var d = props.data || {};
+    // A routed edge carries the geometry dagre laid out; a self-loop, which is
+    // kept out of the graph, draws its own. Same shape either way.
+    var geo = d.route || loopPath(props);
+    return h(React.Fragment, null,
+      h(RF.BaseEdge, {
+        id: props.id, path: geo.path, style: props.style, markerEnd: props.markerEnd
+      }),
+      edgeLabel(props, d, geo.label));
+  }
+
+  var edgeTypes = { flow: FlowEdge };
+
+  // --- app ------------------------------------------------------------------
+  function App() {
+    var tabState = useState(tabFromHash), tab = tabState[0], setTab = tabState[1];
+    var dirState = useState('TB'), dir = dirState[0], setDir = dirState[1];
+    var selState = useState(null), sel = selState[0], setSel = selState[1];
+    var mapState = useState(function () { return readToggle(MAP_KEY); });
+    var showMap = mapState[0], setShowMap = mapState[1];
+    var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
+    var exportRef = useRef(null);
+    // Where the reader has dragged things. Empty means dagre's layout, untouched.
+    var movedState = useState({}), moved = movedState[0], setMoved = movedState[1];
+
+    var f = flows[tab];
+
+    useEffect(function () {
+      function syncTab() {
+        setTab(tabFromHash());
+        setSel(null);
+      }
+      addEventListener('hashchange', syncTab);
+      return function () { removeEventListener('hashchange', syncTab); };
+    }, []);
+
+    useEffect(function () {
+      if (!showExport) return;
+      exportRef.current.querySelector('[role="menuitem"]').focus();
+      function close(ev) {
+        if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+        if (ev.type === 'mousedown' && exportRef.current.contains(ev.target)) return;
+        setShowExport(false);
+        if (ev.type === 'keydown') exportRef.current.querySelector('[aria-haspopup="menu"]').focus();
+      }
+      addEventListener('mousedown', close); addEventListener('keydown', close);
+      return function () { removeEventListener('mousedown', close); removeEventListener('keydown', close); };
+    }, [showExport]);
+
+    var laidOut = useMemo(function () { return layout(f.nodeList, f.edgeItems, dir); }, [f, dir]);
+    var placedNodes = laidOut.nodes, routes = laidOut.routes;
+
+    // Selecting anything asks the same question: what leads here?
+    var lit = useMemo(function () {
+      if (!sel) return null;
+      if (sel.kind === 'node') return upstream(f, sel.id);
+      var e = f.edgeById[sel.id];
+      var up = upstream(f, e.from);
+      up.edges[e.id] = true;
+      // Lit, but not a step that leads here: it is where this edge arrives.
+      if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
+      return up;
+    }, [f, sel]);
+
+    var nodes = useMemo(function () {
+      return placedNodes.map(function (n) {
+        return Object.assign({}, n, {
+          position: moved[n.id] || n.position,
+          data: Object.assign({}, n.data, {
+            selected: !!sel && sel.kind === 'node' && sel.id === n.id,
+            dim: !!lit && lit.dist[n.id] === undefined
+          })
+        });
+      });
+    }, [placedNodes, sel, lit, moved]);
+
+    // Relayout moves every node, so the old viewport frames nothing — and every
+    // hand-placed position belonged to the layout that just went away.
+    var fitView = RF.useReactFlow().fitView;
+    useEffect(function () {
+      setMoved(function (prev) { return Object.keys(prev).length ? {} : prev; });
+      fitView(FIT);
+    }, [f, dir, fitView]);
+
+    var basePos = useMemo(function () {
+      return placedNodes.reduce(function (m, n) { m[n.id] = n.position; return m; }, Object.create(null));
+    }, [placedNodes]);
+
+    var onNodesChange = useCallback(function (changes) {
+      var dragged = null;
+      changes.forEach(function (c) {
+        if (c.type !== 'position' || !c.position) return;
+        // Mount echoes the layout position back; a node left where dagre put it
+        // is not something to offer a reset from.
+        var base = basePos[c.id];
+        if (base && c.position.x === base.x && c.position.y === base.y) return;
+        dragged = dragged || {};
+        dragged[c.id] = c.position;
+      });
+      if (dragged) {
+        setMoved(function (prev) { return Object.assign({}, prev, dragged); });
+      }
+    }, [basePos]);
+
+    var selectEdge = useCallback(function (id) {
+      setSel({ kind: 'edge', id: id });
+    }, []);
+
+    // Everything about an edge that a selection cannot change. Clicking rebuilds
+    // only the layer below, so the geometry, the aria text and the label
+    // handlers are built once per layout instead of once per click.
+    var baseEdges = useMemo(function () {
+      return f.edgeItems.map(function (e) {
+        var kind = edgeKind(e.kind), route = routes[e.id];
+        return {
+          id: e.id, source: e.from, target: e.to, label: e.label || undefined,
+          ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
+            ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
+          sourceHandle: 'sout', targetHandle: 'tin',
+          type: 'flow',
+          // A kind's colour is information and always shows; the accent is
+          // state, so it only paints where the kind has nothing to say. With
+          // nothing selected there is no state, so every edge sits at rest.
+          color: kind.color,
+          data: {
+            route: route || null,
+            loop: route ? null : {
+              x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
+              y: heightOf(f.nodeById[e.from]) / 2 + 60
+            },
+            dim: false,
+            // The label is outside the edge's own group, so React Flow's edge
+            // click never reaches it; it selects the edge itself.
+            select: function () { selectEdge(e.id); }
+          },
+          style: {
+            stroke: kind.color || MUTED, strokeWidth: 1.5, strokeDasharray: kind.dash
+          },
+          // The marker id is built from every field here, so an undefined colour
+          // yields a marker that paints nothing. Always name it.
+          markerEnd: {
+            type: RF.MarkerType.ArrowClosed, color: kind.color || MUTED
+          }
+        };
+      });
+    }, [f, routes, selectEdge]);
+
+    // With nothing selected there is no state to paint, so the array built above
+    // is handed straight through and every edge keeps its identity.
+    var edges = useMemo(function () {
+      if (!lit) return baseEdges;
+      return baseEdges.map(function (b) {
+        var on = !!lit.edges[b.id];
+        var stroke = b.color || (on ? ACCENT : MUTED);
+        return Object.assign({}, b, {
+          data: Object.assign({}, b.data, { dim: !on }),
+          className: on ? undefined : 'dim',
+          style: Object.assign({}, b.style, { stroke: stroke, strokeWidth: on ? 2 : 1.5 }),
+          markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
+        });
+      });
+    }, [baseEdges, lit]);
+
+    var onNodeClick = useCallback(function (_, node) {
+      setSel({ kind: 'node', id: node.id });
+    }, []);
+    var onEdgeClick = useCallback(function (_, edge) {
+      selectEdge(edge.id);
+    }, [selectEdge]);
+
+    // The hash is what says which tab is open; the hashchange listener above
+    // clears the selection, and the relayout effect clears any hand placement.
+    function openTab(i) { location.hash = tabIds[i]; }
+
+    function runExport(format) {
+      setShowExport(false);
+      // svgExport throws synchronously when the canvas is missing, so the call
+      // goes through a promise to keep both failures on one handler.
+      Promise.resolve().then(function () {
+        return exportFlow(nodes, f.title || doc.title || 'Flow', format);
+      }).catch(function (error) {
+        console.error(error); alert('Could not export this flow.');
+      });
+    }
+
+    // Which way this step went. Only lit edges count, so it names the branch
+    // actually taken; a graph that re-converges names both.
+    function branchOut(id) {
+      return unique((f.outgoing[id] || [])
+        .filter(function (e) { return lit.edges[e.id] && e.label; })
+        .map(function (e) { return e.label; })).join(' / ');
+    }
+
+    // The steps that lead here, start first — the reason the highlight lit up.
+    function trail(minDist) {
+      var ids = stepsInto(lit, minDist);
+      if (!ids.length) {
+        return h('p', { className: 'hint' }, 'Nothing leads here. This is a starting point.');
+      }
+      return h('div', { className: 'trail' },
+        h('div', { className: 'trail-label' }, leadIn(ids.length)),
+        h('ol', { className: 'steps' }, ids.map(function (id) {
+          var n = f.nodeById[id];
+          var branch = branchOut(id);
+          function open() { setSel({ kind: 'node', id: id }); }
+          return h('li', {
+            key: id, onClick: open, tabIndex: 0, role: 'button',
+            onKeyDown: function (ev) {
+              if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
+            }
+          },
+            labelOf(f, id),
+            branch ? h('span', { className: 'branch' }, '→ ' + branch) : null,
+            n.ref ? h('span', { className: 'ref' }, n.ref) : null
+          );
+        }))
+      );
+    }
+
+    // Every state of the panel takes the same shape: a title that names the
+    // subject, one meta line of secondary facts, then the body it earns.
+    function panel() {
+      if (sel && sel.kind === 'node') {
+        var n = f.nodeById[sel.id];
+        var kind = kindOf(n.kind);
+        return h(React.Fragment, null,
+          panelHead(n.label || n.id, [
+            tag(KIND_COLOR[kind], kind),
+            n.ref ? h('code', { key: 'ref' }, n.ref) : null
+          ]),
+          h('div', { className: 'panel-body' },
+            n.note ? h('p', { className: 'note' }, n.note) : null,
+            h('p', { className: 'detail' }, n.detail || 'No detail recorded for this step.'),
+            trail(1)
+          )
+        );
+      }
+      if (sel) {
+        var e = f.edgeById[sel.id];
+        // An unlabelled edge has no name of its own, so the transition becomes
+        // the title rather than the word "unlabelled".
+        var move = labelOf(f, e.from) + ' → ' + labelOf(f, e.to);
+        return h(React.Fragment, null,
+          panelHead(e.label || move, [
+            tag(edgeKind(e.kind).color || MUTED, e.kind || 'edge'),
+            e.label ? h('span', { key: 'ends' }, move) : null
+          ]),
+          h('div', { className: 'panel-body' },
+            e.detail
+              ? h('p', { className: 'detail' }, e.detail)
+              : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
+            trail(0)
+          )
+        );
+      }
+      // Nothing selected: the diagram introduces itself. This is where the title
+      // and the summary live, so the header is free to carry the tabs.
+      return h(React.Fragment, null,
+        panelHead(f.title || doc.title || 'Flow', [
+          doc.title && doc.title !== f.title
+            ? h('span', { key: 'doc' }, doc.title) : null,
+          h('span', { key: 'n' }, f.nodeList.length + ' nodes'),
+          h('span', { key: 'e' }, f.edgeItems.length + ' edges')
+        ]),
+        h('div', { className: 'panel-body' },
+          f.summary ? h('p', { className: 'detail' }, f.summary) : null,
+          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there.'),
+          f.problems.length
+            ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
+                return h('li', { key: i }, t);
+              }))
+            : null
+        )
+      );
+    }
+
+    return h(React.Fragment, null,
+      h('header', null,
+        h('div', { className: 'tabs', 'aria-label': flows.length > 1 ? 'Flows' : null },
+          flows.length > 1
+          ? [h('h1', { className: 'flow-title sr-only', key: 'title' }, doc.title || 'Flow')]
+              .concat(flows.map(function (fl, i) {
+              return h('button', {
+                key: i,
+                className: 'tab' + (i === tab ? ' on' : ''),
+                'aria-current': i === tab ? 'page' : null,
+                onClick: function () { openTab(i); }
+              }, fl.title || 'Flow ' + (i + 1));
+            }))
+          : h('h1', { className: 'flow-title' }, f.title || doc.title || 'Flow')),
+        h('button', { onClick: function () { setDir(dir === 'TB' ? 'LR' : 'TB'); } },
+          dir === 'TB' ? 'Left to right' : 'Top to bottom'),
+        h('button', {
+          className: 'minimap-toggle',
+          onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
+        }, showMap ? 'Hide minimap' : 'Show minimap'),
+        Object.keys(moved).length
+          ? h('button', { onClick: function () { setMoved({}); } }, 'Reset layout')
+          : null,
+        h('div', { className: 'export', ref: exportRef },
+          h('button', {
+            'aria-haspopup': 'menu', 'aria-expanded': showExport,
+            onClick: function () { setShowExport(!showExport); }
+          }, 'Export ↓'),
+          showExport ? h('div', { className: 'export-menu', role: 'menu' },
+            h('button', { role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
+            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG')
+          ) : null
+        ),
+        f.problems.length
+          ? h('span', { className: 'badge bad', title: f.problems.join('\n') },
+              f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : ''))
+          : h('span', {
+              className: 'badge ok',
+              title: f.nodeList.length + ' nodes checked at build time: ids ' +
+                     'unique, kinds known, every edge resolves, every decision ' +
+                     'branches, every path reaches an end.'
+            }, 'Trace valid')
+      ),
+      h('main', { className: sel ? 'has-selection' : '' },
+        h('div', { className: 'canvas' },
+          h(RF.ReactFlow, {
+            nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
+            onNodesChange: onNodesChange,
+            // A click that wobbles still selects; only a real drag moves a node.
+            nodeDragThreshold: 4,
+            onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
+            onPaneClick: function () { setSel(null); },
+            fitView: true, fitViewOptions: FIT,
+            proOptions: { hideAttribution: true },
+            minZoom: 0.1
+          },
+            h(RF.Controls, { showInteractive: false }),
+            showMap ? h(RF.MiniMap, {
+              pannable: true, zoomable: true, nodeColor: nodeColorOf
+            }) : null,
+            h(RF.Panel, {
+              position: 'top-right', className: 'edge-legend',
+              role: 'list', 'aria-label': 'Edge legend'
+            }, Object.keys(EDGE_KINDS).map(function (key) {
+              var item = EDGE_KINDS[key];
+              return h('span', { className: 'legend-item', role: 'listitem', key: key },
+                h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
+                  h('line', {
+                    x1: 1, y1: 4, x2: 25, y2: 4, strokeWidth: 2,
+                    stroke: item.color || MUTED, strokeDasharray: item.dash
+                  })
+                ),
+                item.label
+              );
+            }))
+          )
+        ),
+        h('aside', null,
+          sel ? h('button', {
+            className: 'mobile-back', onClick: function () { setSel(null); }
+          }, 'Back to flow') : null,
+          panel()
+        )
+      )
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root'))
+    .render(h(RF.ReactFlowProvider, null, h(App, null)));
+})();
+</script>
+</body>
+</html>
