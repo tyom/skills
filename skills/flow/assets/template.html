@@ -310,6 +310,7 @@
 
   // ponytail: estimated from the character count rather than measured. An 11px
   // proportional font puts this a few pixels out, which the gaps absorb.
+  // Tracks .edge-label's font-size and horizontal padding; change those together.
   function labelWidth(text) { return text.length * 5.9 + 10; }
 
   // Estimated from the lines the body will hold: padding + label, then a note
@@ -644,12 +645,13 @@
     });
     dagre.layout(g);
 
-    var routes = Object.create(null);
+    var routes = Object.create(null), vertical = dir === 'TB';
     routed.forEach(function (e) {
       var d = g.edge({ v: e.from, w: e.to, name: e.id });
       if (!d) return;
       routes[e.id] = {
-        points: snapEnds(d.points, g.node(e.from), g.node(e.to), dir === 'TB'),
+        // Drawn once here, not per render: a route only moves when the layout does.
+        path: routePath(orthogonal(snapEnds(d.points, g.node(e.from), g.node(e.to), vertical), vertical)),
         // dagre puts the label slot on the route, so the line runs under the
         // label and the label's own background masks it.
         label: d.x === undefined ? null : { x: d.x, y: d.y }
@@ -762,8 +764,8 @@
       }, props.label));
   }
 
-  // --- routed edge ----------------------------------------------------------
-  // The path is dagre's own route, so it bends around whatever stands between
+  // --- edge ------------------------------------------------------------------
+  // A routed path is dagre's own, so it bends around whatever stands between
   // its ends instead of cutting through it. Corners are rounded on the way out.
   var CORNER = 10;
 
@@ -812,25 +814,21 @@
     return { x: from.x + (to.x - from.x) * by / len, y: from.y + (to.y - from.y) * by / len };
   }
 
-  function RouteEdge(props) {
+  function FlowEdge(props) {
     var d = props.data || {};
+    // A routed edge carries dagre's path and the label slot dagre reserved on
+    // it; a self-loop, which dagre cannot rank, draws its own and puts the
+    // label on the apex. Both paint the same way into the same label layer.
+    var loop = d.path ? null : loopPath(props);
     return h(React.Fragment, null,
       h(RF.BaseEdge, {
-        id: props.id, path: d.path, style: props.style, markerEnd: props.markerEnd
+        id: props.id, path: loop ? loop.d : d.path,
+        style: props.style, markerEnd: props.markerEnd
       }),
-      edgeLabel(props, d.label));
+      edgeLabel(props, loop || d.label));
   }
 
-  function LoopEdge(props) {
-    var c = loopPath(props);
-    return h(React.Fragment, null,
-      h(RF.BaseEdge, {
-        id: props.id, path: c.d, style: props.style, markerEnd: props.markerEnd
-      }),
-      edgeLabel(props, c));
-  }
-
-  var edgeTypes = { route: RouteEdge, loop: LoopEdge };
+  var edgeTypes = { flow: FlowEdge };
 
   // --- app ------------------------------------------------------------------
   function App() {
@@ -937,9 +935,9 @@
           ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
             ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
           sourceHandle: 'sout', targetHandle: 'tin',
-          type: route ? 'route' : 'loop',
+          type: 'flow',
           data: {
-            path: route ? routePath(orthogonal(route.points, dir === 'TB')) : null,
+            path: route ? route.path : null,
             label: route ? route.label : null,
             loop: route ? null : {
               x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
@@ -960,7 +958,7 @@
           markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
         };
       });
-    }, [f, lit, routes, dir]);
+    }, [f, lit, routes]);
 
     var onNodeClick = useCallback(function (_, node) {
       setSel({ kind: 'node', id: node.id });
