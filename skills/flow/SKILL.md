@@ -3,17 +3,12 @@ name: flow
 description: "Traces evidence-backed branching flows and renders one or more as tabs in an interactive graph."
 argument-hint: "<the flow to trace; empty for the current topic>"
 disable-model-invocation: true
-# Auto-approved while the skill runs. Reads source, writes flow.json, and opens
-# one HTML file. The build.sh call and browser checks still prompt.
+# Auto-approved while the skill runs. Searches the web, writes one temporary
+# JSON file, and opens one temporary HTML file. Build and browser checks prompt.
 allowed-tools:
-  - Read
-  - Grep
-  - Glob
-  - Write
-  - Bash(open:*)
-  - Bash(ls:*)
-  - Bash(find:*)
-  - Bash(command -v:*)
+  - WebSearch
+  - Edit(//tmp/*-flow-*.json)
+  - Bash(open /tmp/*-flow-*.html)
 ---
 
 # Flow
@@ -50,9 +45,9 @@ Done when:
 - every path reaches an `end` or `success` node;
 - every `detail` is supported by the evidence.
 
-## 3. Write `flow.json`
+## 3. Write the JSON
 
-Write only `flow.json`. Dagre computes coordinates and the template owns every style. Read [`assets/example.json`](assets/example.json) if a complete single-flow example would help.
+Write only `/tmp/YYYY-MM-DD-flow-<slug>.json`. Dagre computes coordinates and the template owns every style. Read [`assets/example.json`](assets/example.json) if a complete single-flow example would help.
 
 Top-level fields are `title`, `summary`, `nodes`, and `edges`. For multiple tabs, use `title` plus a `flows` array; each flow has its own `title`, `summary`, `nodes`, and `edges`. Node ids are scoped to their flow.
 
@@ -83,10 +78,10 @@ Done when the JSON contains the traced behaviour with no coordinates, styles, or
 Run from this skill's base directory:
 
 ```sh
-assets/build.sh flow.json /tmp/YYYY-MM-DD-flow-<slug>.html <source-root>
+assets/build.sh /tmp/YYYY-MM-DD-flow-<slug>.json /tmp/YYYY-MM-DD-flow-<slug>.html <source-root>
 ```
 
-`<source-root>` is the directory that refs are relative to, so it is the root the trace came from, not this skill's directory. The build writes the page even when checks fail. Fix `flow.json` and rebuild until the command is silent apart from its output-file summary. Ref warnings must be resolved when local source exists.
+`<source-root>` is the directory that refs are relative to, so it is the root the trace came from, not this skill's directory. The build writes the page even when checks fail. Fix the JSON and rebuild until the command is silent apart from its output-file summary. Ref warnings must be resolved when local source exists.
 
 Open the generated HTML. Inspect every tab for unsupported detail, collapsed branches, and tabs too thin to justify their own diagram.
 
