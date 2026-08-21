@@ -1,4 +1,9 @@
-# tyom/skills
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/mark-dark.svg">
+    <img src="assets/mark.svg" alt="dotfiles" width="300">
+  </picture>
+</p>
 
 Tyom's personal collection of agent skills, installable with the
 [skills.sh](https://skills.sh) CLI.
