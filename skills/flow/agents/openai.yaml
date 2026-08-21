@@ -1,0 +1,8 @@
+interface:
+  display_name: "Flow"
+  short_description: "Trace a flow and render it as an interactive graph"
+policy:
+  # Codex's half of the SKILL.md `disable-model-invocation: true`. Keep both in
+  # sync: without this, Codex still fires the skill implicitly. `$flow` keeps
+  # working either way.
+  allow_implicit_invocation: false
