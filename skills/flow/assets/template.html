@@ -365,7 +365,7 @@
 
   function exportBounds(nodes, root) {
     var box = nodes.reduce(function (b, n) {
-      var w = n.width || n.data.width, ht = n.height || n.data.height || 0;
+      var w = n.width || n.data.width || 0, ht = n.height || n.data.height || 0;
       b.x1 = Math.min(b.x1, n.position.x); b.y1 = Math.min(b.y1, n.position.y);
       b.x2 = Math.max(b.x2, n.position.x + w); b.y2 = Math.max(b.y2, n.position.y + ht);
       return b;
@@ -923,7 +923,11 @@
 
     function runExport(format) {
       setShowExport(false);
-      exportFlow(nodes, f.title || doc.title || 'Flow', format).catch(function (error) {
+      // svgExport throws synchronously when the canvas is missing, so the call
+      // goes through a promise to keep both failures on one handler.
+      Promise.resolve().then(function () {
+        return exportFlow(nodes, f.title || doc.title || 'Flow', format);
+      }).catch(function (error) {
         console.error(error); alert('Could not export this flow.');
       });
     }
