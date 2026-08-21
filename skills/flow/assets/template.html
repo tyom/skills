@@ -239,8 +239,16 @@
   .node-fork .ref, .node-join .ref, .node-fork .note, .node-join .note { display: none; }
   .node-fork.selected, .node-join.selected { box-shadow: 0 0 0 2px var(--accent); }
 
-  .react-flow__edge-text { font-size: 11px; fill: var(--muted); }
-  .react-flow__edge-textbg { fill: var(--bg); }
+  /* Labels are rendered into React Flow's label layer, above every path, so a
+     line crossing the band cannot strike through the text that names it. */
+  .edge-label {
+    position: absolute; transform-origin: 50% 50%;
+    font-size: 11px; line-height: 1.4; color: var(--muted);
+    background: var(--bg); padding: 0 4px; border-radius: 3px;
+    white-space: nowrap; cursor: pointer; pointer-events: all;
+  }
+  .edge-label:hover { color: var(--ink); }
+  .edge-label.dim { opacity: 0.25; }
   .react-flow__attribution { display: none; }
   /* React Flow ships a light-only chrome; re-point it at the theme tokens. */
   .react-flow__controls-button {
@@ -299,6 +307,10 @@
   var FIT = { padding: 0.15 };
 
   function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
+
+  // ponytail: estimated from the character count rather than measured. An 11px
+  // proportional font puts this a few pixels out, which the gaps absorb.
+  function labelWidth(text) { return text.length * 5.9 + 10; }
 
   // Estimated from the lines the body will hold: padding + label, then a note
   // and a ref if present. dagre spaces ranks off this, so a short guess crowds
@@ -479,15 +491,9 @@
         };
       });
 
-    // A self-transition and a there-and-back pair both collapse onto one corridor
-    // under the built-in router: one visible line, and the label of whichever drew
-    // last. Both get a curve instead.
-    var seenPair = Object.create(null);
-    edgeItems.forEach(function (e) { seenPair[e.from + '\u0000' + e.to] = true; });
-    edgeItems.forEach(function (e) {
-      e.selfLoop = e.from === e.to;
-      e.twinned = !e.selfLoop && !!seenPair[e.to + '\u0000' + e.from];
-    });
+    // A there-and-back pair is two edges to dagre, each with its own route; only
+    // a self-transition has no rank to cross and needs drawing by hand.
+    edgeItems.forEach(function (e) { e.selfLoop = e.from === e.to; });
 
     var incoming = Object.create(null), outgoing = Object.create(null);
     edgeItems.forEach(function (e) {
@@ -586,38 +592,96 @@
 
   // --- layout ---------------------------------------------------------------
   // dagre owns every coordinate; the flow data carries none.
+  // Labels are laid out too, not placed afterwards. An edge that carries one is
+  // given its size here, so dagre reserves a slot for it on that edge's own
+  // route: no two labels can land on each other, and none lands on a node.
+  var LABELH = 20;
+
+  // dagre ends a route where it crosses the node's rectangle, which for a lane
+  // far to one side is the node's own corner — the line then reads as leaving
+  // the side of the box rather than the face the flow runs off. Both ends are
+  // moved onto that face, inset far enough to clear the rounding.
+  var INSET = 16;
+
+  function snapEnds(pts, src, tgt, vertical) {
+    var out = pts.slice();
+    out[0] = onFace(src, out[1], vertical);
+    out[out.length - 1] = onFace(tgt, out[out.length - 2], vertical);
+    return out;
+  }
+
+  function onFace(node, toward, vertical) {
+    var half = { x: node.width / 2, y: node.height / 2 };
+    // Which face the flow actually runs off, so a back edge leaves the top.
+    var away = vertical
+      ? (toward.y < node.y ? -1 : 1)
+      : (toward.x < node.x ? -1 : 1);
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    var inset = Math.min(INSET, (vertical ? half.x : half.y) / 2);
+    return vertical
+      ? { x: clamp(toward.x, node.x - half.x + inset, node.x + half.x - inset),
+          y: node.y + away * half.y }
+      : { x: node.x + away * half.x,
+          y: clamp(toward.y, node.y - half.y + inset, node.y + half.y - inset) };
+  }
+
   function layout(nodes, edges, dir) {
-    var g = new dagre.graphlib.Graph();
+    // A multigraph, so two edges between the same pair stay two edges — they get
+    // their own route and their own label slot instead of sharing one.
+    var g = new dagre.graphlib.Graph({ multigraph: true });
     g.setGraph({ rankdir: dir, nodesep: 52, ranksep: 96, marginx: 24, marginy: 24 });
     g.setDefaultEdgeLabel(function () { return {}; });
     nodes.forEach(function (n) {
       g.setNode(n.id, { width: widthOf(n.kind), height: heightOf(n) });
     });
-    edges.forEach(function (e) { g.setEdge(e.from, e.to); });
+    // A self-edge has no rank to cross and dagre has nowhere to put it; it is
+    // drawn as a loop off the node's own side instead.
+    var routed = edges.filter(function (e) { return !e.selfLoop; });
+    routed.forEach(function (e) {
+      g.setEdge(e.from, e.to, e.label
+        ? { width: labelWidth(e.label), height: LABELH, labelpos: 'c' }
+        : {}, e.id);
+    });
     dagre.layout(g);
-    return nodes.map(function (n) {
-      var p = g.node(n.id), w = widthOf(n.kind), ht = heightOf(n), kind = kindOf(n.kind);
-      return {
-        id: n.id,
-        type: 'flow',
-        ariaLabel: (n.label || n.id) + ', ' + kind +
-          '. Select to inspect its path and details.',
-        position: { x: p.x - w / 2, y: p.y - ht / 2 },
-        // Declared, not measured — the minimap draws its rects before layout settles.
-        width: w, height: ht,
-        data: {
-          width: w,
-          // Only a bar is pinned to its height; a box grows with a wrapped label.
-          height: isBar(n.kind) ? ht : null,
-          label: n.label || n.id,
-          kind: kind,
-          note: n.note || '',
-          ref: n.ref || '',
-          detail: n.detail || '',
-          dir: dir
-        }
+
+    var routes = Object.create(null);
+    routed.forEach(function (e) {
+      var d = g.edge({ v: e.from, w: e.to, name: e.id });
+      if (!d) return;
+      routes[e.id] = {
+        points: snapEnds(d.points, g.node(e.from), g.node(e.to), dir === 'TB'),
+        // dagre puts the label slot on the route, so the line runs under the
+        // label and the label's own background masks it.
+        label: d.x === undefined ? null : { x: d.x, y: d.y }
       };
     });
+
+    return {
+      routes: routes,
+      nodes: nodes.map(function (n) {
+        var p = g.node(n.id), w = widthOf(n.kind), ht = heightOf(n), kind = kindOf(n.kind);
+        return {
+          id: n.id,
+          type: 'flow',
+          ariaLabel: (n.label || n.id) + ', ' + kind +
+            '. Select to inspect its path and details.',
+          position: { x: p.x - w / 2, y: p.y - ht / 2 },
+          // Declared, not measured — the minimap draws its rects before layout settles.
+          width: w, height: ht,
+          data: {
+            width: w,
+            // Only a bar is pinned to its height; a box grows with a wrapped label.
+            height: isBar(n.kind) ? ht : null,
+            label: n.label || n.id,
+            kind: kind,
+            note: n.note || '',
+            ref: n.ref || '',
+            detail: n.detail || '',
+            dir: dir
+          }
+        };
+      })
+    };
   }
 
   // --- node -----------------------------------------------------------------
@@ -643,16 +707,6 @@
         position: vertical ? RF.Position.Top : RF.Position.Left,
         style: { opacity: 0 }
       }),
-      h(RF.Handle, {
-        id: 'sback', type: 'source',
-        position: vertical ? RF.Position.Top : RF.Position.Left,
-        style: { opacity: 0 }
-      }),
-      h(RF.Handle, {
-        id: 'tback', type: 'target',
-        position: vertical ? RF.Position.Bottom : RF.Position.Right,
-        style: { opacity: 0 }
-      }),
       h('div', { className: 'body' },
         h('div', { className: 'label' }, d.label),
         d.note ? h('div', { className: 'note' }, d.note) : null,
@@ -668,115 +722,115 @@
 
   var nodeTypes = { flow: FlowNode };
 
-  // --- curved edge ----------------------------------------------------------
-  // React Flow ships neither a self-loop nor any edge separation, so the path is
-  // drawn here and handed to BaseEdge, which paints it, lays the label out and
-  // adds the wide invisible stroke every built-in edge is clickable by. The bow
-  // offsets along the normal of the straight line, and a twin runs the opposite
-  // way, so the pair bows to opposite sides for free.
-  var BOW = 46;      // how far a twin bows off the straight line
-  var ENDGAP = 13;   // and how far its endpoints slide, so arrowheads land apart
-  var LOOPGAP = 66;  // how far a self-edge leaves the centre of its own node
+  // --- self-loop ------------------------------------------------------------
+  // dagre routes everything except an edge back to its own node, which has no
+  // rank to cross. That one is drawn here, off the node's own side.
+  var LOOPGAP = 66;
 
-  function curvePath(props) {
+  function loopPath(props) {
     var sx = props.sourceX, sy = props.sourceY, tx = props.targetX, ty = props.targetY;
-    if (props.data && props.data.loop) {
-      var out = props.data.loop;
-      // Off the centre line, so the loop clears its own node body and does not
-      // land its arrowhead on top of whatever else arrives here.
-      if (props.sourcePosition === 'bottom') {
-        sx += LOOPGAP; tx += LOOPGAP;
-        return {
-          d: 'M' + sx + ' ' + sy + ' C' + (sx + out.x) + ' ' + (sy + 26) +
-             ',' + (tx + out.x) + ' ' + (ty - 26) + ',' + tx + ' ' + ty,
-          // On the arc's apex, well clear of the node, where the label's own
-          // background masks the line behind it.
-          x: sx + out.x * 0.75, y: (sy + ty) / 2
-        };
-      }
-      sy += LOOPGAP; ty += LOOPGAP;
+    var out = props.data.loop;
+    if (props.sourcePosition === 'bottom') {
+      sx += LOOPGAP; tx += LOOPGAP;
       return {
-        d: 'M' + sx + ' ' + sy + ' C' + (sx + 26) + ' ' + (sy + out.y) +
-           ',' + (tx - 26) + ' ' + (ty + out.y) + ',' + tx + ' ' + ty,
-        x: (sx + tx) / 2, y: sy + out.y * 0.78
+        d: 'M' + sx + ' ' + sy + ' C' + (sx + out.x) + ' ' + (sy + 26) +
+           ',' + (tx + out.x) + ' ' + (ty - 26) + ',' + tx + ' ' + ty,
+        // On the arc's apex, well clear of the node, where the label's own
+        // background masks the line behind it.
+        x: sx + out.x * 0.75, y: (sy + ty) / 2
       };
     }
-    var dx = tx - sx, dy = ty - sy;
-    var len = Math.sqrt(dx * dx + dy * dy) || 1;
-    var nx = -dy / len, ny = dx / len;
-    // Slide the whole curve sideways, endpoints included. A twin's normal points
-    // the other way, so the pair separates along its full length.
-    sx += nx * ENDGAP; sy += ny * ENDGAP;
-    tx += nx * ENDGAP; ty += ny * ENDGAP;
-    var cx = (sx + tx) / 2 + nx * BOW;
-    var cy = (sy + ty) / 2 + ny * BOW;
+    sy += LOOPGAP; ty += LOOPGAP;
     return {
-      d: 'M' + sx + ' ' + sy + ' Q' + cx + ' ' + cy + ' ' + tx + ' ' + ty,
-      x: (sx + 2 * cx + tx) / 4, y: (sy + 2 * cy + ty) / 4
+      d: 'M' + sx + ' ' + sy + ' C' + (sx + 26) + ' ' + (sy + out.y) +
+         ',' + (tx - 26) + ' ' + (ty + out.y) + ',' + tx + ' ' + ty,
+      x: (sx + tx) / 2, y: sy + out.y * 0.78
     };
   }
 
-  function CurveEdge(props) {
-    var c = curvePath(props);
-    return h(RF.BaseEdge, {
-      id: props.id, path: c.d, labelX: c.x, labelY: c.y,
-      label: props.label, style: props.style, markerEnd: props.markerEnd
-    });
+  // --- labels ---------------------------------------------------------------
+  // A label sits in its own layer above the paths, so it is drawn last whatever
+  // order the edges are in, and it stays clickable as the edge it belongs to.
+  function edgeLabel(props, at) {
+    var d = props.data || {};
+    if (!props.label || !at) return null;
+    return h(RF.EdgeLabelRenderer, null,
+      h('div', {
+        className: 'edge-label' + (d.dim ? ' dim' : ''),
+        style: { transform: 'translate(-50%, -50%) translate(' + at.x + 'px,' + at.y + 'px)' },
+        onClick: d.select
+      }, props.label));
   }
 
-  // --- fanned edge ----------------------------------------------------------
-  // Every edge lands on the middle of a handle, so two leaving the same node
-  // share their first segment and paint over each other. Each is given a slot
-  // along the node's side instead, and the ordinary smoothstep router does the
-  // rest. Offsets are computed per flow, where the neighbours are known.
-  var SLOT = 18;   // gap between neighbouring edges on the same side of a node
+  // --- routed edge ----------------------------------------------------------
+  // The path is dagre's own route, so it bends around whatever stands between
+  // its ends instead of cutting through it. Corners are rounded on the way out.
+  var CORNER = 10;
 
-  function FanEdge(props) {
-    var d = props.data || {}, s = d.fanS || 0, t = d.fanT || 0;
-    var vertical = props.sourcePosition === 'bottom' || props.sourcePosition === 'top';
-    var p = RF.getSmoothStepPath({
-      sourceX: props.sourceX + (vertical ? s : 0),
-      sourceY: props.sourceY + (vertical ? 0 : s),
-      targetX: props.targetX + (vertical ? t : 0),
-      targetY: props.targetY + (vertical ? 0 : t),
-      sourcePosition: props.sourcePosition, targetPosition: props.targetPosition
-    });
-    return h(RF.BaseEdge, {
-      id: props.id, path: p[0], labelX: p[1], labelY: p[2],
-      label: props.label, style: props.style, markerEnd: props.markerEnd
-    });
-  }
-
-  // Slot per edge end, ordered by where the other end sits, so the fan opens the
-  // way the edges already run and neighbours do not cross to reach their slot.
-  function fanOffsets(f, dir, pos) {
-    var fan = Object.create(null), outs = Object.create(null), ins = Object.create(null);
-    f.edgeItems.forEach(function (e) {
-      if (e.selfLoop || e.twinned) return;   // drawn as curves, off the handles
-      (outs[e.from] = outs[e.from] || []).push(e);
-      (ins[e.to] = ins[e.to] || []).push(e);
-      fan[e.id] = { fanS: 0, fanT: 0 };
-    });
-    // A broken graph still renders, so an edge may name a node that is not here.
-    function along(id) { var q = pos[id]; return !q ? 0 : dir === 'TB' ? q.x : q.y; }
-    function spread(group, otherEnd, key) {
-      Object.keys(group).forEach(function (nid) {
-        var list = group[nid], n = list.length;
-        if (n < 2) return;
-        list = list.slice().sort(function (a, b) { return along(a[otherEnd]) - along(b[otherEnd]); });
-        var node = f.nodeById[nid];
-        if (!node) return;
-        var side = dir === 'TB' ? widthOf(node.kind) : heightOf(node);
-        var gap = Math.min(SLOT, Math.max(0, side - 28) / (n - 1));
-        list.forEach(function (e, i) { fan[e.id][key] = (i - (n - 1) / 2) * gap; });
-      });
+  // dagre hands back a polyline whose hops run diagonally wherever the route
+  // shifts lane between ranks. The diagram is orthogonal everywhere else, so
+  // each hop is turned into the same step the old router drew — out, across at
+  // the halfway line, then on — which also lands every arrowhead square on.
+  function orthogonal(pts, vertical) {
+    var out = [pts[0]];
+    for (var i = 1; i < pts.length; i++) {
+      var a = out[out.length - 1], b = pts[i];
+      if (a.x !== b.x && a.y !== b.y) {
+        var mid = vertical ? (a.y + b.y) / 2 : (a.x + b.x) / 2;
+        out.push(vertical ? { x: a.x, y: mid } : { x: mid, y: a.y });
+        out.push(vertical ? { x: b.x, y: mid } : { x: mid, y: b.y });
+      }
+      out.push(b);
     }
-    spread(outs, 'to', 'fanS');
-    spread(ins, 'from', 'fanT');
-    return fan;
+    // A point that carries no turn is a corner radius waiting to round nothing.
+    return out.filter(function (p, i) {
+      var a = out[i - 1], b = out[i + 1];
+      if (!a || !b) return true;
+      if (p.x === a.x && p.y === a.y) return false;
+      return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
+    });
   }
 
-  var edgeTypes = { curve: CurveEdge, fan: FanEdge };
+  function routePath(pts) {
+    if (!pts || pts.length < 2) return '';
+    var d = 'M' + pts[0].x + ' ' + pts[0].y;
+    for (var i = 1; i < pts.length - 1; i++) {
+      var a = pts[i - 1], c = pts[i], b = pts[i + 1];
+      var r = Math.min(CORNER, dist(a, c) / 2, dist(c, b) / 2);
+      if (r < 1) { d += ' L' + c.x + ' ' + c.y; continue; }
+      var s = towards(c, a, r), e = towards(c, b, r);
+      d += ' L' + s.x + ' ' + s.y + ' Q' + c.x + ' ' + c.y + ',' + e.x + ' ' + e.y;
+    }
+    var last = pts[pts.length - 1];
+    return d + ' L' + last.x + ' ' + last.y;
+  }
+
+  function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+
+  function towards(from, to, by) {
+    var len = dist(from, to) || 1;
+    return { x: from.x + (to.x - from.x) * by / len, y: from.y + (to.y - from.y) * by / len };
+  }
+
+  function RouteEdge(props) {
+    var d = props.data || {};
+    return h(React.Fragment, null,
+      h(RF.BaseEdge, {
+        id: props.id, path: d.path, style: props.style, markerEnd: props.markerEnd
+      }),
+      edgeLabel(props, d.label));
+  }
+
+  function LoopEdge(props) {
+    var c = loopPath(props);
+    return h(React.Fragment, null,
+      h(RF.BaseEdge, {
+        id: props.id, path: c.d, style: props.style, markerEnd: props.markerEnd
+      }),
+      edgeLabel(props, c));
+  }
+
+  var edgeTypes = { route: RouteEdge, loop: LoopEdge };
 
   // --- app ------------------------------------------------------------------
   function App() {
@@ -817,6 +871,7 @@
     }, [showExport]);
 
     var laidOut = useMemo(function () { return layout(f.nodeList, f.edgeItems, dir); }, [f, dir]);
+    var placedNodes = laidOut.nodes, routes = laidOut.routes;
 
     // Selecting anything asks the same question: what leads here?
     var lit = useMemo(function () {
@@ -831,7 +886,7 @@
     }, [f, sel]);
 
     var nodes = useMemo(function () {
-      return laidOut.map(function (n) {
+      return placedNodes.map(function (n) {
         return Object.assign({}, n, {
           position: moved[n.id] || n.position,
           data: Object.assign({}, n.data, {
@@ -840,7 +895,7 @@
           })
         });
       });
-    }, [laidOut, sel, lit, moved]);
+    }, [placedNodes, sel, lit, moved]);
 
     // Relayout moves every node, so the old viewport frames nothing — and every
     // hand-placed position belonged to the layout that just went away.
@@ -851,8 +906,8 @@
     }, [f, dir, fitView]);
 
     var basePos = useMemo(function () {
-      return laidOut.reduce(function (m, n) { m[n.id] = n.position; return m; }, Object.create(null));
-    }, [laidOut]);
+      return placedNodes.reduce(function (m, n) { m[n.id] = n.position; return m; }, Object.create(null));
+    }, [placedNodes]);
 
     var onNodesChange = useCallback(function (changes) {
       var dragged = null;
@@ -871,14 +926,9 @@
     }, [basePos]);
 
     var edges = useMemo(function () {
-      var fan = fanOffsets(f, dir, basePos);
       return f.edgeItems.map(function (e) {
         var on = !lit || lit.edges[e.id];
-        // A twin that runs back up the layout leaves the near side and arrives
-        // at the near side, instead of taking the long way round.
-        var back = e.twinned && (dir === 'TB'
-          ? basePos[e.to].y < basePos[e.from].y
-          : basePos[e.to].x < basePos[e.from].x);
+        var route = routes[e.id];
         // A kind's colour is information and always shows; the accent is state,
         // so it only paints where the kind has nothing to say.
         var stroke = edgeKind(e.kind).color || (lit && on ? ACCENT : MUTED);
@@ -886,15 +936,18 @@
           id: e.id, source: e.from, target: e.to, label: e.label || undefined,
           ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
             ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
-          sourceHandle: back ? 'sback' : 'sout',
-          targetHandle: back ? 'tback' : 'tin',
-          type: e.selfLoop || e.twinned ? 'curve' : 'fan',
+          sourceHandle: 'sout', targetHandle: 'tin',
+          type: route ? 'route' : 'loop',
           data: {
-            loop: e.selfLoop ? {
+            path: route ? routePath(orthogonal(route.points, dir === 'TB')) : null,
+            label: route ? route.label : null,
+            loop: route ? null : {
               x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
               y: heightOf(f.nodeById[e.from]) / 2 + 60
-            } : null,
-            fanS: (fan[e.id] || {}).fanS, fanT: (fan[e.id] || {}).fanT
+            },
+            // The label is outside the edge's own group, so React Flow's edge
+            // click never reaches it; it selects the edge itself.
+            dim: !on, select: function () { setSel({ kind: 'edge', id: e.id }); }
           },
           className: on ? undefined : 'dim',
           style: {
@@ -907,7 +960,7 @@
           markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
         };
       });
-    }, [f, lit, basePos, dir]);
+    }, [f, lit, routes, dir]);
 
     var onNodeClick = useCallback(function (_, node) {
       setSel({ kind: 'node', id: node.id });
