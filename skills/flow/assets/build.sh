@@ -26,14 +26,29 @@ except (OSError, json.JSONDecodeError) as e:
 
 # One diagram is written flat; several arrive under `flows`. The page only ever
 # sees the array, so the shorthand is widened here.
+if not isinstance(data, dict):
+    sys.exit(f"build.sh: {src} must hold a JSON object")
 nested = isinstance(data.get("flows"), list) and bool(data["flows"])
 flows = data["flows"] if nested else [data]
 
+# Shape checked up front: everything below indexes into these without guarding,
+# so a malformed file has to fail here rather than as a traceback.
 for i, flow in enumerate(flows):
+    where = f"flows[{i}]" if nested else "top level"
+    if not isinstance(flow, dict):
+        sys.exit(f"build.sh: {src} needs an object at {where}")
     for key in ("nodes", "edges"):
         if not isinstance(flow.get(key), list):
-            where = f"flows[{i}]" if nested else "top level"
             sys.exit(f"build.sh: {src} needs a {key!r} array at {where}")
+    if not flow["nodes"]:
+        sys.exit(f"build.sh: {src} has no nodes at {where}")
+    for j, n in enumerate(flow["nodes"]):
+        if not isinstance(n, dict) or not isinstance(n.get("id"), str) or not n["id"]:
+            sys.exit(f"build.sh: {src} needs a string 'id' at {where}.nodes[{j}]")
+    for j, e in enumerate(flow["edges"]):
+        ends = [e.get(k) for k in ("from", "to")] if isinstance(e, dict) else []
+        if len(ends) != 2 or not all(isinstance(x, str) and x for x in ends):
+            sys.exit(f"build.sh: {src} needs string 'from' and 'to' at {where}.edges[{j}]")
 
 # The vocabulary SKILL.md documents. Unknown kinds render as a plain step, so
 # without this a typo silently paints a success terminal as an ordinary box.
@@ -69,8 +84,12 @@ def check(flow, root):
             path, _, line = ref.rpartition(":")
             if not line.isdigit():
                 path, line = ref, None
-            f = root / path
-            if not f.is_file():
+            f = (root / path).resolve()
+            # An absolute or ../ ref would otherwise be validated against a file
+            # outside the subject, and read as if it belonged to it.
+            if not f.is_relative_to(root):
+                warnings.append(("ref escapes source root", f"{nid}: {ref}"))
+            elif not f.is_file():
                 warnings.append(("ref file missing", f"{nid}: {ref}"))
             elif line and int(line) > line_count(f):
                 warnings.append(("ref line past end", f"{nid}: {ref}"))
@@ -106,12 +125,27 @@ def check(flow, root):
         for n in nodes
         if n["id"] not in seen
     ]
+
+    # And backwards from the terminals: a loop with no exit is reachable from a
+    # start and still traps the reader. Dead ends already reported above.
+    ends, queue = set(), [n["id"] for n in nodes if n.get("kind") in ("end", "success")]
+    while queue:
+        cur = queue.pop()
+        if cur in ends:
+            continue
+        ends.add(cur)
+        queue += [e["from"] for e in incoming[cur]]
+    bad += [
+        ("no path to an end", f"{n['id']}: {n.get('label', '')}")
+        for n in nodes
+        if n["id"] in seen and n["id"] not in ends and outgoing[n["id"]]
+    ]
     return warnings, bad
 
 
 # Checked before the page is written, so each flow can carry its own problems
 # and the badge on the page says exactly what this output says.
-root = pathlib.Path(os.environ["ROOT"])
+root = pathlib.Path(os.environ["ROOT"]).resolve()
 reports = [check(flow, root) for flow in flows]
 for flow, (_, bad) in zip(flows, reports):
     flow["problems"] = [f"{what}: {where}" for what, where in bad]

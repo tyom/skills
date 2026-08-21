@@ -385,10 +385,16 @@
   }
 
   var flows = doc.flows.map(prepare);
+  var usedTabIds = Object.create(null);
   var tabIds = flows.map(function (f, i) {
     var fallback = 'flow-' + (i + 1);
-    return (f.title || fallback).toLowerCase()
+    var base = (f.title || fallback).toLowerCase()
       .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
+    // Two flows can share a title, and the hash has to address one tab only.
+    var id = base, n = i;
+    while (usedTabIds[id]) id = base + '-' + (++n);
+    usedTabIds[id] = true;
+    return id;
   });
 
   function tabFromHash() {
