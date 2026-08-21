@@ -242,13 +242,14 @@
   /* Labels are rendered into React Flow's label layer, above every path, so a
      line crossing the band cannot strike through the text that names it. */
   .edge-label {
-    position: absolute; transform-origin: 50% 50%;
+    position: absolute;
     font-size: 11px; line-height: 1.4; color: var(--muted);
     background: var(--bg); padding: 0 4px; border-radius: 3px;
     white-space: nowrap; cursor: pointer; pointer-events: all;
   }
   .edge-label:hover { color: var(--ink); }
-  .edge-label.dim { opacity: 0.25; }
+  /* Tracks .react-flow__edge.dim: a label must not outshout its own line. */
+  .edge-label.dim { opacity: 0.1; }
   .react-flow__attribution { display: none; }
   /* React Flow ships a light-only chrome; re-point it at the theme tokens. */
   .react-flow__controls-button {
@@ -302,8 +303,8 @@
       useCallback = React.useCallback, useEffect = React.useEffect,
       useRef = React.useRef;
 
-  // No zoom floor: a load that only half-frames the graph is worse than one
-  // that shrinks it. Matches what the Controls fit button does.
+  // Shared so the load fit and every relayout fit agree; the two drifting apart
+  // frames the graph differently depending on how you got there.
   var FIT = { padding: 0.15 };
 
   function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
@@ -492,10 +493,6 @@
         };
       });
 
-    // A there-and-back pair is two edges to dagre, each with its own route; only
-    // a self-transition has no rank to cross and needs drawing by hand.
-    edgeItems.forEach(function (e) { e.selfLoop = e.from === e.to; });
-
     var incoming = Object.create(null), outgoing = Object.create(null);
     edgeItems.forEach(function (e) {
       (incoming[e.to] || (incoming[e.to] = [])).push(e);
@@ -612,18 +609,17 @@
   }
 
   function onFace(node, toward, vertical) {
+    // run: the axis the flow travels on, which the point is pinned to the face of,
+    // picking the face the flow runs off so a back edge leaves the top. across:
+    // the face's own axis, which the point slides along, inset from the corners.
+    var run = vertical ? 'y' : 'x', across = vertical ? 'x' : 'y';
     var half = { x: node.width / 2, y: node.height / 2 };
-    // Which face the flow actually runs off, so a back edge leaves the top.
-    var away = vertical
-      ? (toward.y < node.y ? -1 : 1)
-      : (toward.x < node.x ? -1 : 1);
-    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-    var inset = Math.min(INSET, (vertical ? half.x : half.y) / 2);
-    return vertical
-      ? { x: clamp(toward.x, node.x - half.x + inset, node.x + half.x - inset),
-          y: node.y + away * half.y }
-      : { x: node.x + away * half.x,
-          y: clamp(toward.y, node.y - half.y + inset, node.y + half.y - inset) };
+    var inset = Math.min(INSET, half[across] / 2);
+    var p = {};
+    p[run] = node[run] + (toward[run] < node[run] ? -1 : 1) * half[run];
+    p[across] = clamp(toward[across], node[across] - half[across] + inset,
+                                      node[across] + half[across] - inset);
+    return p;
   }
 
   function layout(nodes, edges, dir) {
@@ -635,9 +631,9 @@
     nodes.forEach(function (n) {
       g.setNode(n.id, { width: widthOf(n.kind), height: heightOf(n) });
     });
-    // A self-edge has no rank to cross and dagre has nowhere to put it; it is
-    // drawn as a loop off the node's own side instead.
-    var routed = edges.filter(function (e) { return !e.selfLoop; });
+    // dagre would route a self-edge too, but squared off like any other. It is
+    // held back and drawn as an arc instead; see loopPath.
+    var routed = edges.filter(function (e) { return e.from !== e.to; });
     routed.forEach(function (e) {
       g.setEdge(e.from, e.to, e.label
         ? { width: labelWidth(e.label), height: LABELH, labelpos: 'c' }
@@ -649,9 +645,10 @@
     routed.forEach(function (e) {
       var d = g.edge({ v: e.from, w: e.to, name: e.id });
       if (!d) return;
+      var ends = snapEnds(d.points, g.node(e.from), g.node(e.to), vertical);
       routes[e.id] = {
         // Drawn once here, not per render: a route only moves when the layout does.
-        path: routePath(orthogonal(snapEnds(d.points, g.node(e.from), g.node(e.to), vertical), vertical)),
+        path: routePath(orthogonal(ends, vertical)),
         // dagre puts the label slot on the route, so the line runs under the
         // label and the label's own background masks it.
         label: d.x === undefined ? null : { x: d.x, y: d.y }
@@ -661,7 +658,9 @@
     return {
       routes: routes,
       nodes: nodes.map(function (n) {
-        var p = g.node(n.id), w = widthOf(n.kind), ht = heightOf(n), kind = kindOf(n.kind);
+        // dagre leaves a leaf node's declared size alone, so read it back
+        // rather than deriving it twice.
+        var p = g.node(n.id), w = p.width, ht = p.height, kind = kindOf(n.kind);
         return {
           id: n.id,
           type: 'flow',
@@ -725,36 +724,36 @@
   var nodeTypes = { flow: FlowNode };
 
   // --- self-loop ------------------------------------------------------------
-  // dagre routes everything except an edge back to its own node, which has no
-  // rank to cross. That one is drawn here, off the node's own side.
+  // dagre can route an edge back to its own node, but squares it off like any
+  // other route. A self-transition reads better as an arc, so it is drawn here
+  // off the node's own side and kept out of the graph.
   var LOOPGAP = 66;
 
   function loopPath(props) {
-    var sx = props.sourceX, sy = props.sourceY, tx = props.targetX, ty = props.targetY;
-    var out = props.data.loop;
-    if (props.sourcePosition === 'bottom') {
-      sx += LOOPGAP; tx += LOOPGAP;
-      return {
-        d: 'M' + sx + ' ' + sy + ' C' + (sx + out.x) + ' ' + (sy + 26) +
-           ',' + (tx + out.x) + ' ' + (ty - 26) + ',' + tx + ' ' + ty,
-        // On the arc's apex, well clear of the node, where the label's own
-        // background masks the line behind it.
-        x: sx + out.x * 0.75, y: (sy + ty) / 2
-      };
-    }
-    sy += LOOPGAP; ty += LOOPGAP;
+    // bow: the axis the arc swings out on, pushed clear of the node body so the
+    // loop does not land its arrowhead on whatever else arrives here. from/to
+    // run along the other axis, between the node's two handles.
+    var vertical = props.sourcePosition === 'bottom';
+    var out = vertical ? props.data.loop.x : props.data.loop.y;
+    var bow = (vertical ? props.sourceX : props.sourceY) + LOOPGAP;
+    var from = vertical ? props.sourceY : props.sourceX;
+    var to = vertical ? props.targetY : props.targetX;
+    function at(b, r) { return vertical ? b + ' ' + r : r + ' ' + b; }
     return {
-      d: 'M' + sx + ' ' + sy + ' C' + (sx + 26) + ' ' + (sy + out.y) +
-         ',' + (tx - 26) + ' ' + (ty + out.y) + ',' + tx + ' ' + ty,
-      x: (sx + tx) / 2, y: sy + out.y * 0.78
+      path: 'M' + at(bow, from) + ' C' + at(bow + out, from + 26) +
+            ',' + at(bow + out, to - 26) + ',' + at(bow, to),
+      // On the arc's apex, well clear of the node, where the label's own
+      // background masks the line behind it.
+      label: vertical
+        ? { x: bow + out * 0.75, y: (from + to) / 2 }
+        : { x: (from + to) / 2, y: bow + out * 0.78 }
     };
   }
 
   // --- labels ---------------------------------------------------------------
   // A label sits in its own layer above the paths, so it is drawn last whatever
   // order the edges are in, and it stays clickable as the edge it belongs to.
-  function edgeLabel(props, at) {
-    var d = props.data || {};
+  function edgeLabel(props, d, at) {
     if (!props.label || !at) return null;
     return h(RF.EdgeLabelRenderer, null,
       h('div', {
@@ -807,6 +806,8 @@
     return d + ' L' + last.x + ' ' + last.y;
   }
 
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
   function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
 
   function towards(from, to, by) {
@@ -816,16 +817,14 @@
 
   function FlowEdge(props) {
     var d = props.data || {};
-    // A routed edge carries dagre's path and the label slot dagre reserved on
-    // it; a self-loop, which dagre cannot rank, draws its own and puts the
-    // label on the apex. Both paint the same way into the same label layer.
-    var loop = d.path ? null : loopPath(props);
+    // A routed edge carries the geometry dagre laid out; a self-loop, which is
+    // kept out of the graph, draws its own. Same shape either way.
+    var geo = d.route || loopPath(props);
     return h(React.Fragment, null,
       h(RF.BaseEdge, {
-        id: props.id, path: loop ? loop.d : d.path,
-        style: props.style, markerEnd: props.markerEnd
+        id: props.id, path: geo.path, style: props.style, markerEnd: props.markerEnd
       }),
-      edgeLabel(props, loop || d.label));
+      edgeLabel(props, d, geo.label));
   }
 
   var edgeTypes = { flow: FlowEdge };
@@ -923,49 +922,71 @@
       }
     }, [basePos]);
 
-    var edges = useMemo(function () {
+    var selectEdge = useCallback(function (id) {
+      setSel({ kind: 'edge', id: id });
+    }, []);
+
+    // Everything about an edge that a selection cannot change. Clicking rebuilds
+    // only the layer below, so the geometry, the aria text and the label
+    // handlers are built once per layout instead of once per click.
+    var baseEdges = useMemo(function () {
       return f.edgeItems.map(function (e) {
-        var on = !lit || lit.edges[e.id];
-        var route = routes[e.id];
-        // A kind's colour is information and always shows; the accent is state,
-        // so it only paints where the kind has nothing to say.
-        var stroke = edgeKind(e.kind).color || (lit && on ? ACCENT : MUTED);
+        var kind = edgeKind(e.kind), route = routes[e.id];
         return {
           id: e.id, source: e.from, target: e.to, label: e.label || undefined,
           ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
             ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
           sourceHandle: 'sout', targetHandle: 'tin',
           type: 'flow',
+          // A kind's colour is information and always shows; the accent is
+          // state, so it only paints where the kind has nothing to say. With
+          // nothing selected there is no state, so every edge sits at rest.
+          color: kind.color,
           data: {
-            path: route ? route.path : null,
-            label: route ? route.label : null,
+            route: route || null,
             loop: route ? null : {
               x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
               y: heightOf(f.nodeById[e.from]) / 2 + 60
             },
+            dim: false,
             // The label is outside the edge's own group, so React Flow's edge
             // click never reaches it; it selects the edge itself.
-            dim: !on, select: function () { setSel({ kind: 'edge', id: e.id }); }
+            select: function () { selectEdge(e.id); }
           },
-          className: on ? undefined : 'dim',
           style: {
-            stroke: stroke,
-            strokeWidth: lit && on ? 2 : 1.5,
-            strokeDasharray: edgeKind(e.kind).dash
+            stroke: kind.color || MUTED, strokeWidth: 1.5, strokeDasharray: kind.dash
           },
           // The marker id is built from every field here, so an undefined colour
           // yields a marker that paints nothing. Always name it.
-          markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
+          markerEnd: {
+            type: RF.MarkerType.ArrowClosed, color: kind.color || MUTED
+          }
         };
       });
-    }, [f, lit, routes]);
+    }, [f, routes, selectEdge]);
+
+    // With nothing selected there is no state to paint, so the array built above
+    // is handed straight through and every edge keeps its identity.
+    var edges = useMemo(function () {
+      if (!lit) return baseEdges;
+      return baseEdges.map(function (b) {
+        var on = !!lit.edges[b.id];
+        var stroke = b.color || (on ? ACCENT : MUTED);
+        return Object.assign({}, b, {
+          data: Object.assign({}, b.data, { dim: !on }),
+          className: on ? undefined : 'dim',
+          style: Object.assign({}, b.style, { stroke: stroke, strokeWidth: on ? 2 : 1.5 }),
+          markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
+        });
+      });
+    }, [baseEdges, lit]);
 
     var onNodeClick = useCallback(function (_, node) {
       setSel({ kind: 'node', id: node.id });
     }, []);
     var onEdgeClick = useCallback(function (_, edge) {
-      setSel({ kind: 'edge', id: edge.id });
-    }, []);
+      selectEdge(edge.id);
+    }, [selectEdge]);
 
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect clears any hand placement.
