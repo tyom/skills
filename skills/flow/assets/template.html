@@ -1082,7 +1082,7 @@
         ]),
         h('div', { className: 'panel-body' },
           f.summary ? h('p', { className: 'detail' }, f.summary) : null,
-          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there.'),
+          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there. Hold Shift while scrolling to pan.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
                 return h('li', { key: i }, t);
@@ -1145,6 +1145,10 @@
             onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
             onPaneClick: function () { setSel(null); },
             fitView: true, fitViewOptions: FIT,
+            // Held, Shift turns wheel/two-finger scroll into a pan instead of a
+            // zoom. Shift is also React Flow's box-select key, and box-select
+            // does nothing here, so that binding is dropped rather than shared.
+            panActivationKeyCode: 'Shift', selectionKeyCode: null,
             proOptions: { hideAttribution: true },
             minZoom: 0.1
           },
