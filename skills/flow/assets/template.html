@@ -57,6 +57,18 @@
   button:focus-visible {
     outline: 3px solid var(--accent); outline-offset: 2px;
   }
+  .export { position: relative; display: flex; align-self: center; }
+  .export-menu {
+    position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
+    min-width: 142px; padding: 4px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 7px;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
+  }
+  header .export-menu button {
+    display: block; width: 100%; padding: 6px 8px; text-align: left;
+    background: none; border: 0;
+  }
+  header .export-menu button:hover { background: var(--bg); }
   /* A tab is navigation, not an option: no box, and its indicator sits down on
      the header's own bottom rule so the strip reads as the edge of the canvas. */
   header .tab {
@@ -279,7 +291,8 @@
   var h = React.createElement;
   var RF = ReactFlow;
   var useState = React.useState, useMemo = React.useMemo,
-      useCallback = React.useCallback, useEffect = React.useEffect;
+      useCallback = React.useCallback, useEffect = React.useEffect,
+      useRef = React.useRef;
 
   // Fitting a long flow to the window shrinks it past reading size, so the fit
   // stops at a floor and the graph is scrolled instead. The pane's own minZoom
@@ -329,12 +342,93 @@
   function nodeColorOf(n) { return KIND_COLOR[n.data.kind]; }
 
   // Private to whoever opens the page, and absent in a locked-down browser.
-  var MAP_KEY = 'flow:minimap';
-  function readMinimap() {
-    try { return localStorage.getItem(MAP_KEY) !== '0'; } catch (e) { return true; }
+  var MAP_KEY = 'flow:minimap', GRID_KEY = 'flow:grid';
+  function readToggle(key) {
+    try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
   }
-  function writeMinimap(on) {
-    try { localStorage.setItem(MAP_KEY, on ? '1' : '0'); } catch (e) { /* no store */ }
+  function writeToggle(key, on) {
+    try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* no store */ }
+  }
+
+  function fileName(title, ext) {
+    var base = (title || 'flow').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return (base || 'flow') + '.' + ext;
+  }
+
+  function download(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url; link.download = name;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportBounds(nodes, root) {
+    var box = nodes.reduce(function (b, n) {
+      var w = n.width || n.data.width, ht = n.height || n.data.height || 0;
+      b.x1 = Math.min(b.x1, n.position.x); b.y1 = Math.min(b.y1, n.position.y);
+      b.x2 = Math.max(b.x2, n.position.x + w); b.y2 = Math.max(b.y2, n.position.y + ht);
+      return b;
+    }, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+    root.querySelectorAll('.react-flow__edge').forEach(function (edge) {
+      try {
+        var e = edge.getBBox();
+        box.x1 = Math.min(box.x1, e.x); box.y1 = Math.min(box.y1, e.y);
+        box.x2 = Math.max(box.x2, e.x + e.width); box.y2 = Math.max(box.y2, e.y + e.height);
+      } catch (ignore) { /* detached SVG */ }
+    });
+    return box;
+  }
+
+  function svgExport(nodes) {
+    var source = document.querySelector('.canvas .react-flow');
+    if (!source) throw new Error('Flow canvas not found');
+    var clone = source.cloneNode(true), bounds = exportBounds(nodes, source), pad = 32;
+    var width = Math.ceil(bounds.x2 - bounds.x1 + pad * 2);
+    var height = Math.ceil(bounds.y2 - bounds.y1 + pad * 2);
+    clone.style.width = width + 'px'; clone.style.height = height + 'px';
+    clone.style.background = getComputedStyle(document.documentElement).getPropertyValue('--bg');
+    clone.querySelectorAll('.react-flow__controls, .react-flow__minimap, .react-flow__panel')
+      .forEach(function (el) { el.remove(); });
+    clone.querySelector('.react-flow__viewport').style.transform =
+      'translate(' + (pad - bounds.x1) + 'px,' + (pad - bounds.y1) + 'px) scale(1)';
+    var styles = Array.from(document.querySelectorAll('style'))
+      .map(function (style) { return style.textContent; }).join('\n');
+    var body = new XMLSerializer().serializeToString(clone);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width +
+      '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' +
+      '<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">' +
+      '<style>' + styles.replace(/<\/style/gi, '<\\/style') + '</style>' + body +
+      '</div></foreignObject></svg>';
+    return { blob: new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), width: width, height: height };
+  }
+
+  function exportFlow(nodes, title, format) {
+    var image = svgExport(nodes);
+    if (format === 'svg') {
+      download(image.blob, fileName(title, 'svg'));
+      return Promise.resolve();
+    }
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(image.blob), preview = new Image();
+      preview.crossOrigin = 'anonymous';
+      preview.onload = function () {
+        URL.revokeObjectURL(url);
+        var scale = Math.min(2, 16000 / image.width, 16000 / image.height,
+          Math.sqrt(100000000 / (image.width * image.height)));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(image.width * scale));
+        canvas.height = Math.max(1, Math.floor(image.height * scale));
+        var context = canvas.getContext('2d');
+        context.scale(scale, scale); context.drawImage(preview, 0, 0);
+        canvas.toBlob(function (blob) {
+          if (!blob) { reject(new Error('PNG encoding failed')); return; }
+          download(blob, fileName(title, 'png')); resolve();
+        }, 'image/png');
+      };
+      preview.onerror = function () { URL.revokeObjectURL(url); reject(new Error('SVG rendering failed')); };
+      preview.src = url;
+    });
   }
 
   var doc = JSON.parse(document.getElementById('flow-data').textContent);
@@ -601,14 +695,71 @@
     });
   }
 
-  var edgeTypes = { curve: CurveEdge };
+  // --- fanned edge ----------------------------------------------------------
+  // Every edge lands on the middle of a handle, so two leaving the same node
+  // share their first segment and paint over each other. Each is given a slot
+  // along the node's side instead, and the ordinary smoothstep router does the
+  // rest. Offsets are computed per flow, where the neighbours are known.
+  var SLOT = 18;   // gap between neighbouring edges on the same side of a node
+
+  function FanEdge(props) {
+    var d = props.data || {}, s = d.fanS || 0, t = d.fanT || 0;
+    var vertical = props.sourcePosition === 'bottom' || props.sourcePosition === 'top';
+    var p = RF.getSmoothStepPath({
+      sourceX: props.sourceX + (vertical ? s : 0),
+      sourceY: props.sourceY + (vertical ? 0 : s),
+      targetX: props.targetX + (vertical ? t : 0),
+      targetY: props.targetY + (vertical ? 0 : t),
+      sourcePosition: props.sourcePosition, targetPosition: props.targetPosition
+    });
+    return h(RF.BaseEdge, {
+      id: props.id, path: p[0], labelX: p[1], labelY: p[2],
+      label: props.label, style: props.style, markerEnd: props.markerEnd
+    });
+  }
+
+  // Slot per edge end, ordered by where the other end sits, so the fan opens the
+  // way the edges already run and neighbours do not cross to reach their slot.
+  function fanOffsets(f, dir, pos) {
+    var fan = Object.create(null), outs = Object.create(null), ins = Object.create(null);
+    f.edgeItems.forEach(function (e) {
+      if (e.selfLoop || e.twinned) return;   // drawn as curves, off the handles
+      (outs[e.from] = outs[e.from] || []).push(e);
+      (ins[e.to] = ins[e.to] || []).push(e);
+      fan[e.id] = { fanS: 0, fanT: 0 };
+    });
+    // A broken graph still renders, so an edge may name a node that is not here.
+    function along(id) { var q = pos[id]; return !q ? 0 : dir === 'TB' ? q.x : q.y; }
+    function spread(group, otherEnd, key) {
+      Object.keys(group).forEach(function (nid) {
+        var list = group[nid], n = list.length;
+        if (n < 2) return;
+        list = list.slice().sort(function (a, b) { return along(a[otherEnd]) - along(b[otherEnd]); });
+        var node = f.nodeById[nid];
+        if (!node) return;
+        var side = dir === 'TB' ? widthOf(node.kind) : heightOf(node);
+        var gap = Math.min(SLOT, Math.max(0, side - 28) / (n - 1));
+        list.forEach(function (e, i) { fan[e.id][key] = (i - (n - 1) / 2) * gap; });
+      });
+    }
+    spread(outs, 'to', 'fanS');
+    spread(ins, 'from', 'fanT');
+    return fan;
+  }
+
+  var edgeTypes = { curve: CurveEdge, fan: FanEdge };
 
   // --- app ------------------------------------------------------------------
   function App() {
     var tabState = useState(tabFromHash), tab = tabState[0], setTab = tabState[1];
     var dirState = useState('TB'), dir = dirState[0], setDir = dirState[1];
     var selState = useState(null), sel = selState[0], setSel = selState[1];
-    var mapState = useState(readMinimap), showMap = mapState[0], setShowMap = mapState[1];
+    var mapState = useState(function () { return readToggle(MAP_KEY); });
+    var showMap = mapState[0], setShowMap = mapState[1];
+    var gridState = useState(function () { return readToggle(GRID_KEY); });
+    var showGrid = gridState[0], setShowGrid = gridState[1];
+    var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
+    var exportRef = useRef(null);
     // Where the reader has dragged things. Empty means dagre's layout, untouched.
     var movedState = useState({}), moved = movedState[0], setMoved = movedState[1];
 
@@ -622,6 +773,19 @@
       addEventListener('hashchange', syncTab);
       return function () { removeEventListener('hashchange', syncTab); };
     }, []);
+
+    useEffect(function () {
+      if (!showExport) return;
+      exportRef.current.querySelector('[role="menuitem"]').focus();
+      function close(ev) {
+        if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+        if (ev.type === 'mousedown' && exportRef.current.contains(ev.target)) return;
+        setShowExport(false);
+        if (ev.type === 'keydown') exportRef.current.querySelector('[aria-haspopup="menu"]').focus();
+      }
+      addEventListener('mousedown', close); addEventListener('keydown', close);
+      return function () { removeEventListener('mousedown', close); removeEventListener('keydown', close); };
+    }, [showExport]);
 
     var laidOut = useMemo(function () { return layout(f.nodeList, f.edgeItems, dir); }, [f, dir]);
 
@@ -678,6 +842,7 @@
     }, [basePos]);
 
     var edges = useMemo(function () {
+      var fan = fanOffsets(f, dir, basePos);
       return f.edgeItems.map(function (e) {
         var on = !lit || lit.edges[e.id];
         // A twin that runs back up the layout leaves the near side and arrives
@@ -694,12 +859,13 @@
             ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
           sourceHandle: back ? 'sback' : 'sout',
           targetHandle: back ? 'tback' : 'tin',
-          type: e.selfLoop || e.twinned ? 'curve' : 'smoothstep',
+          type: e.selfLoop || e.twinned ? 'curve' : 'fan',
           data: {
             loop: e.selfLoop ? {
               x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
               y: heightOf(f.nodeById[e.from]) / 2 + 60
-            } : null
+            } : null,
+            fanS: (fan[e.id] || {}).fanS, fanT: (fan[e.id] || {}).fanT
           },
           className: on ? undefined : 'dim',
           style: {
@@ -724,6 +890,13 @@
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect clears any hand placement.
     function openTab(i) { location.hash = tabIds[i]; }
+
+    function runExport(format) {
+      setShowExport(false);
+      exportFlow(nodes, f.title || doc.title || 'Flow', format).catch(function (error) {
+        console.error(error); alert('Could not export this flow.');
+      });
+    }
 
     // Which way this step went. Only lit edges count, so it names the branch
     // actually taken; a graph that re-converges names both.
@@ -834,11 +1007,24 @@
           dir === 'TB' ? 'Left to right' : 'Top to bottom'),
         h('button', {
           className: 'minimap-toggle',
-          onClick: function () { writeMinimap(!showMap); setShowMap(!showMap); }
+          onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
         }, showMap ? 'Hide minimap' : 'Show minimap'),
+        h('button', {
+          onClick: function () { writeToggle(GRID_KEY, !showGrid); setShowGrid(!showGrid); }
+        }, showGrid ? 'Hide grid' : 'Show grid'),
         Object.keys(moved).length
           ? h('button', { onClick: function () { setMoved({}); } }, 'Reset layout')
           : null,
+        h('div', { className: 'export', ref: exportRef },
+          h('button', {
+            'aria-haspopup': 'menu', 'aria-expanded': showExport,
+            onClick: function () { setShowExport(!showExport); }
+          }, 'Export ↓'),
+          showExport ? h('div', { className: 'export-menu', role: 'menu' },
+            h('button', { role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
+            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG')
+          ) : null
+        ),
         f.problems.length
           ? h('span', { className: 'badge bad', title: f.problems.join('\n') },
               f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : ''))
@@ -862,7 +1048,7 @@
             proOptions: { hideAttribution: true },
             minZoom: 0.1
           },
-            h(RF.Background, { gap: 16 }),
+            showGrid ? h(RF.Background, { gap: 16 }) : null,
             h(RF.Controls, { showInteractive: false }),
             showMap ? h(RF.MiniMap, {
               pannable: true, zoomable: true, nodeColor: nodeColorOf

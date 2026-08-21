@@ -3,3 +3,4 @@ node_modules/
 *.log
 flow.json
 .impeccable/
+.playwright-cli/
