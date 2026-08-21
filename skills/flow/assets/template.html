@@ -294,10 +294,9 @@
       useCallback = React.useCallback, useEffect = React.useEffect,
       useRef = React.useRef;
 
-  // Fitting a long flow to the window shrinks it past reading size, so the fit
-  // stops at a floor and the graph is scrolled instead. The pane's own minZoom
-  // is lower, so zooming out by hand still works.
-  var FIT = { padding: 0.15, minZoom: 0.72 };
+  // No zoom floor: a load that only half-frames the graph is worse than one
+  // that shrinks it. Matches what the Controls fit button does.
+  var FIT = { padding: 0.15 };
 
   function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
 
