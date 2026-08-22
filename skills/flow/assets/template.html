@@ -392,12 +392,47 @@
   // Tracks .edge-label's font-size and horizontal padding; change those together.
   function labelWidth(text) { return text.length * 5.9 + 10; }
 
-  // Estimated from the lines the body will hold: padding + label, then a note
-  // and a ref if present. dagre spaces ranks off this, so a short guess crowds
-  // every edge between them.
+  // dagre needs a height before React has rendered anything, and a guess is
+  // wrong the moment a note wraps: the box then grows past the rect the route
+  // was aimed at, and an arrowhead arriving at the bottom face hides under it.
+  // So the body is measured off screen, once per distinct node. The markup here
+  // mirrors FlowNode's; change one, change the other.
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden';
+  document.body.appendChild(probe);
+  var measured = Object.create(null);
+
+  function bodyLine(cls, text) {
+    var el = document.createElement('div');
+    el.className = cls;
+    el.textContent = text;
+    return el;
+  }
+
   function heightOf(n) {
     if (isBar(n.kind)) return 22;
-    return 37 + (n.note ? 18 : 0) + (n.ref ? 17 : 0);
+    var kind = kindOf(n.kind), label = n.label || n.id;
+    var key = [kind, label, n.note || '', n.ref || ''].join('\u0000');
+    if (measured[key] === undefined) {
+      var box = document.createElement('div'), body = document.createElement('div');
+      box.className = 'node node-' + kind;
+      box.style.width = widthOf(kind) + 'px';
+      body.className = 'body';
+      body.appendChild(bodyLine('label', label));
+      if (n.note) body.appendChild(bodyLine('note', n.note));
+      // A ref is one line whatever it holds, since .ref .name ellipsises, but
+      // it has to be measured inside that span to stay one.
+      if (n.ref) {
+        var ref = bodyLine('ref', '');
+        ref.appendChild(bodyLine('name', n.ref));
+        body.appendChild(ref);
+      }
+      box.appendChild(body);
+      probe.appendChild(box);
+      measured[key] = box.offsetHeight;
+      probe.removeChild(box);
+    }
+    return measured[key];
   }
 
   // SVG fills and the minimap don't resolve CSS vars, so the palette is read
