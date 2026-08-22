@@ -106,12 +106,28 @@
   }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
-  .badge {
+  header .controls { display: contents; }
+  .check, .burger-wrap { position: relative; display: flex; align-self: center; }
+  .burger-wrap { display: none; }
+  header .burger { font-size: 15px; line-height: 1; padding: 6px 9px; }
+  header .export-menu .opener { display: block; width: 100%; margin: 4px 0 0; }
+  header .badge {
     font-size: 12px; padding: 2px 9px; border-radius: 999px;
-    border: 1px solid currentColor; cursor: help; align-self: center;
+    border: 1px solid currentColor; background: none; cursor: help;
+    align-self: center; white-space: nowrap;
   }
+  header .badge:hover { border-color: currentColor; }
   .badge.ok { color: var(--ok); padding: 2px 7px; }
   .badge.bad { color: var(--bad); }
+  /* The tick is the whole badge once the words no longer fit. */
+  .badge .mark { display: none; }
+  .check-note {
+    position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
+    width: max-content; max-width: min(260px, 74vw); padding: 8px 10px;
+    color: var(--ink); background: var(--panel); font-size: 12px;
+    white-space: pre-line; border: 1px solid var(--line); border-radius: 7px;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
+  }
 
   main { flex: 1; display: flex; min-height: 0; }
   /* Both, not just the background: colour inherits as a resolved value, so
@@ -324,12 +340,22 @@
   .react-flow__minimap-mask { fill: var(--bg); fill-opacity: .6; }
 
   @media (max-width: 720px) {
-    header { gap: 6px; padding: 0 10px; }
+    header { gap: 6px; padding: 0 10px; min-height: 56px; }
     header .tabs { min-width: 0; overflow-x: auto; }
     header .tab { flex: none; min-height: 44px; }
     header button:not(.tab) { min-height: 44px; }
     header .minimap-toggle { display: none; }
-    .badge { white-space: nowrap; }
+    /* Only the tabs and the tick earn header space; the rest goes behind ☰. */
+    header .controls { display: none; }
+    .burger-wrap { display: flex; }
+    .badge .label { display: none; }
+    .badge .mark { display: inline; }
+    /* Two square keys either side of the title: the menu and the check. */
+    header .burger, header .badge {
+      display: flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; min-height: 0; padding: 0;
+      font-size: 15px; border-radius: 8px;
+    }
 
     main.has-selection .canvas, main:not(.has-selection) aside { display: none; }
     aside { width: 100%; border-left: 0; }
@@ -1154,6 +1180,25 @@
 
   var edgeTypes = { flow: FlowEdge };
 
+  // Every header popover dismisses the same way: click away or press Escape.
+  function useDismiss(open, setOpen, ref) {
+    useEffect(function () {
+      if (!open) return;
+      var first = ref.current.querySelector('[role="menu"] button');
+      if (first) first.focus();
+      function close(ev) {
+        if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+        if (ev.type === 'mousedown' && ref.current.contains(ev.target)) return;
+        setOpen(false);
+        if (ev.type === 'keydown') ref.current.querySelector('button').focus();
+      }
+      addEventListener('mousedown', close); addEventListener('keydown', close);
+      return function () {
+        removeEventListener('mousedown', close); removeEventListener('keydown', close);
+      };
+    }, [open]);
+  }
+
   // --- app ------------------------------------------------------------------
   function App() {
     var tabState = useState(tabFromHash), tab = tabState[0], setTab = tabState[1];
@@ -1162,13 +1207,15 @@
     var mapState = useState(function () { return readToggle(MAP_KEY); });
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
+    var menuState = useState(false), showMenu = menuState[0], setShowMenu = menuState[1];
+    var noteState = useState(false), showNote = noteState[0], setShowNote = noteState[1];
     var bgState = useState(true), exportBg = bgState[0], setExportBg = bgState[1];
     var editorState = useState(readEditor), editor = editorState[0], setEditor = editorState[1];
     var themeState = useState(function () {
       return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
     var canvasTheme = themeState[0], setCanvasTheme = themeState[1];
-    var exportRef = useRef(null);
+    var exportRef = useRef(null), menuRef = useRef(null), checkRef = useRef(null);
     var f = flows[tab];
 
     useEffect(function () {
@@ -1180,18 +1227,9 @@
       return function () { removeEventListener('hashchange', syncTab); };
     }, []);
 
-    useEffect(function () {
-      if (!showExport) return;
-      exportRef.current.querySelector('[role="menuitem"]').focus();
-      function close(ev) {
-        if (ev.type === 'keydown' && ev.key !== 'Escape') return;
-        if (ev.type === 'mousedown' && exportRef.current.contains(ev.target)) return;
-        setShowExport(false);
-        if (ev.type === 'keydown') exportRef.current.querySelector('[aria-haspopup="menu"]').focus();
-      }
-      addEventListener('mousedown', close); addEventListener('keydown', close);
-      return function () { removeEventListener('mousedown', close); removeEventListener('keydown', close); };
-    }, [showExport]);
+    useDismiss(showExport, setShowExport, exportRef);
+    useDismiss(showMenu, setShowMenu, menuRef);
+    useDismiss(showNote, setShowNote, checkRef);
 
     var laidOut = useMemo(function () { return layout(f.nodeList, f.edgeItems, dir); }, [f, dir]);
     var placedNodes = laidOut.nodes, routes = laidOut.routes;
@@ -1334,6 +1372,7 @@
 
     function runExport(format) {
       setShowExport(false);
+      setShowMenu(false);
       // svgExport throws synchronously when the canvas is missing, so the call
       // goes through a promise to keep both failures on one handler.
       Promise.resolve().then(function () {
@@ -1442,6 +1481,45 @@
       );
     }
 
+    // Each control is built once and rendered twice: inline on a wide header,
+    // and inside the ☰ menu on a narrow one. Only one set is ever visible.
+    var dirButton = h('button', {
+      key: 'dir',
+      onClick: function () { setDir(dir === 'TB' ? 'LR' : 'TB'); setShowMenu(false); }
+    }, dir === 'TB' ? 'Left to right' : 'Top to bottom');
+    var minimapButton = h('button', {
+      key: 'map', className: 'minimap-toggle',
+      onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
+    }, showMap ? 'Hide minimap' : 'Show minimap');
+    // Only worth asking where files should open when there are files.
+    var openerSelect = doc.hasFileLinks ? h('select', {
+      key: 'opener', className: 'opener', value: editor, 'aria-label': 'Open files in',
+      onChange: function (ev) {
+        setEditor(ev.target.value);
+        try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
+      }
+    }, Object.keys(OPENERS).map(function (key) {
+      return h('option', { key: key, value: key }, OPENERS[key].label);
+    })) : null;
+    var exportItems = [
+      h('button', { key: 'svg', role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
+      h('button', { key: 'png', role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG'),
+      h('label', { key: 'bg' },
+        h('input', {
+          type: 'checkbox', checked: exportBg,
+          onChange: function (ev) { setExportBg(ev.target.checked); }
+        }),
+        'Background')
+    ];
+    var checkLabel = f.problems.length
+      ? f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : '')
+      : 'Trace valid';
+    var checkText = f.problems.length
+      ? f.problems.join('\n')
+      : f.nodeList.length + ' nodes checked at build time: ids unique, kinds ' +
+        'known, every edge resolves, every decision branches, every path ' +
+        'reaches an end.';
+
     return h(React.Fragment, null,
       h('header', null,
         h('div', { className: 'tabs', 'aria-label': flows.length > 1 ? 'Flows' : null },
@@ -1456,47 +1534,40 @@
               }, fl.title || 'Flow ' + (i + 1));
             }))
           : h('h1', { className: 'flow-title' }, f.title || doc.title || 'Flow')),
-        h('button', { onClick: function () { setDir(dir === 'TB' ? 'LR' : 'TB'); } },
-          dir === 'TB' ? 'Left to right' : 'Top to bottom'),
-        h('button', {
-          className: 'minimap-toggle',
-          onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
-        }, showMap ? 'Hide minimap' : 'Show minimap'),
-        // Only worth asking where files should open when there are files.
-        doc.hasFileLinks ? h('select', {
-          className: 'opener', value: editor, 'aria-label': 'Open files in',
-          onChange: function (ev) {
-            setEditor(ev.target.value);
-            try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
-          }
-        }, Object.keys(OPENERS).map(function (key) {
-          return h('option', { key: key, value: key }, OPENERS[key].label);
-        })) : null,
-        h('div', { className: 'export', ref: exportRef },
-          h('button', {
-            'aria-haspopup': 'menu', 'aria-expanded': showExport,
-            onClick: function () { setShowExport(!showExport); }
-          }, 'Export ↓'),
-          showExport ? h('div', { className: 'export-menu', role: 'menu' },
-            h('button', { role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
-            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG'),
-            h('label', null,
-              h('input', {
-                type: 'checkbox', checked: exportBg,
-                onChange: function (ev) { setExportBg(ev.target.checked); }
-              }),
-              'Background')
-          ) : null
+        h('div', { className: 'controls' },
+          dirButton, minimapButton, openerSelect,
+          h('div', { className: 'export', ref: exportRef },
+            h('button', {
+              'aria-haspopup': 'menu', 'aria-expanded': showExport,
+              onClick: function () { setShowExport(!showExport); }
+            }, 'Export ↓'),
+            showExport
+              ? h('div', { className: 'export-menu', role: 'menu' }, exportItems)
+              : null
+          )
         ),
-        f.problems.length
-          ? h('span', { className: 'badge bad', title: f.problems.join('\n') },
-              f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : ''))
-          : h('span', {
-              className: 'badge ok',
-              title: f.nodeList.length + ' nodes checked at build time: ids ' +
-                     'unique, kinds known, every edge resolves, every decision ' +
-                     'branches, every path reaches an end.'
-            }, 'Trace valid')
+        // Narrow screens keep the check in view and fold everything else away.
+        h('div', { className: 'burger-wrap', ref: menuRef },
+          h('button', {
+            className: 'burger', 'aria-label': 'Menu',
+            'aria-haspopup': 'menu', 'aria-expanded': showMenu,
+            onClick: function () { setShowMenu(!showMenu); }
+          }, '☰'),
+          showMenu
+            ? h('div', { className: 'export-menu', role: 'menu' },
+                dirButton, openerSelect, exportItems)
+            : null
+        ),
+        h('div', { className: 'check', ref: checkRef },
+          h('button', {
+            className: 'badge ' + (f.problems.length ? 'bad' : 'ok'),
+            title: checkText, 'aria-label': checkLabel, 'aria-expanded': showNote,
+            onClick: function () { setShowNote(!showNote); }
+          },
+            h('span', { className: 'mark' }, f.problems.length ? '⚠' : '✓'),
+            h('span', { className: 'label' }, checkLabel)),
+          showNote ? h('div', { className: 'check-note' }, checkText) : null
+        )
       ),
       h('main', { className: sel ? 'has-selection' : '' },
         h('div', { className: 'canvas canvas-' + canvasTheme },
