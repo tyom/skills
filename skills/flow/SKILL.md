@@ -3,10 +3,12 @@ name: flow
 description: "Traces evidence-backed branching flows and renders one or more as tabs in an interactive graph."
 argument-hint: "<the flow to trace; empty for the current topic>"
 disable-model-invocation: true
-# Auto-approved while the skill runs. Searches the web, writes one temporary
-# JSON file, and opens one temporary HTML file. Build and browser checks prompt.
+# Auto-approved while the skill runs. Searches and reads the web, writes one
+# temporary JSON file, and opens one temporary HTML file. Build and browser
+# checks prompt.
 allowed-tools:
   - WebSearch
+  - WebFetch
   - Edit(//tmp/*-flow-*.json)
   - Bash(open /tmp/*-flow-*.html)
 ---
@@ -21,7 +23,9 @@ The vendored renderer owns layout and style. Write data, never markup. Route an 
 
 Use `$ARGUMENTS`; otherwise use the latest subject in the conversation; otherwise use the file open in the IDE.
 
-Survey names and structure first. Identify candidate flows from workflow files, screens, and entry points without tracing them yet. If fit or scope is unclear, read [`subjects.md`](subjects.md). It distinguishes useful branching flows from lists, sequence diagrams, and other poor fits.
+Settle first whether the subject is **local** or **external**. Local means this checkout holds the code that runs it. External means the behaviour lives elsewhere: a protocol, a standard, a vendor's API, a product's own rules. Search the repo before settling it; a subject the repo merely consumes is external.
+
+Survey names and structure first. Identify candidate flows from workflow files, screens, and entry points — for an external subject, from the sections of its specification — without tracing them yet. If fit or scope is unclear, read [`subjects.md`](subjects.md). It distinguishes useful branching flows from lists, sequence diagrams, and other poor fits.
 
 Continue without asking when there is one clear flow. When there are several, ask one question that names them and recommends a default. Set only what is genuinely open:
 
@@ -33,13 +37,16 @@ Done when the selected paths, tab boundaries, and exclusions are explicit.
 
 ## 2. Trace the evidence
 
-Follow each selected path from every entry through every branch to every exit. Use the source for code-backed flows. For a product flow, protocol, or undocumented procedure, use its authoritative definition or the user's decision.
+Follow each selected path from every entry through every branch to every exit.
 
-Copy each `ref` from tool output that displayed the line. Do not reconstruct a path from the search command or memory.
+A local flow is traced from the source. Copy each `ref` from tool output that displayed the line, so the path comes from the file rather than from a search command or memory.
+
+An external flow is researched before it is judged. Search for its authoritative definition — the RFC, the specification, the vendor's own documentation — and read that rather than a summary of it. Where the search is wide, send a subagent to hunt the authorities and return their URLs; the reading stays here, because a node cites the passage you read, not a report of it. Trace the branches from what it says, reconcile sources that disagree, and name the reconciliation in `detail`. Cite what you read in `links`: on the flow for its overall authority, on a node for the passage behind that step. An undocumented procedure has one authority left, the user's decision.
 
 Done when:
 
 - every source-backed node has a `path:line` ref;
+- every external flow links the sources its branches came from;
 - every node without a ref names the supporting decision or rule in `detail`, with the overall authority named in `summary`;
 - every decision has one outgoing edge per real outcome;
 - every path reaches an `end` or `success` node;
@@ -92,7 +99,7 @@ Run from this skill's base directory:
 assets/build.sh /tmp/YYYY-MM-DD-flow-<slug>.json /tmp/YYYY-MM-DD-flow-<slug>.html <source-root>
 ```
 
-`<source-root>` is the directory that refs are relative to, so it is the root the trace came from, not this skill's directory. The build writes the page even when checks fail. Fix the JSON and rebuild until the command is silent apart from its output-file summary. Ref warnings must be resolved when local source exists.
+`<source-root>` is the directory that refs are relative to, so it is the root the trace came from, not this skill's directory. An external flow resolves no refs, so its root is the working directory. The build writes the page even when checks fail. Fix the JSON and rebuild until the command is silent apart from its output-file summary. Ref warnings must be resolved when local source exists.
 
 Open the generated HTML. Inspect every tab for unsupported detail, collapsed branches, and tabs too thin to justify their own diagram.
 
