@@ -662,6 +662,13 @@
     return (f.nodeById[id] && f.nodeById[id].label) || id;
   }
 
+  // A link between two states is a transition; anywhere else it is an edge.
+  // The vocabulary follows the nodes, since a trace has no mode of its own.
+  function wordFor(f, e) {
+    var a = f.nodeById[e.from], b = f.nodeById[e.to];
+    return a && b && a.kind === 'state' && b.kind === 'state' ? 'transition' : 'edge';
+  }
+
   function leadIn(n) {
     return n === 1 ? '1 step leads here' : n + ' steps lead here';
   }
@@ -1156,7 +1163,7 @@
         return {
           id: e.id, source: e.from, target: e.to, label: e.label || undefined,
           ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
-            ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
+            ' to ' + labelOf(f, e.to) + '. Select to inspect this ' + wordFor(f, e) + '.',
           sourceHandle: 'sout', targetHandle: 'tin',
           type: 'flow',
           // A kind's colour is information and always shows; the accent is
@@ -1294,13 +1301,14 @@
         var move = labelOf(f, e.from) + ' → ' + labelOf(f, e.to);
         return h(React.Fragment, null,
           panelHead(e.label || move, [
-            tag(edgeKind(e.kind).color || MUTED, e.kind || 'edge'),
+            tag(edgeKind(e.kind).color || MUTED, e.kind || wordFor(f, e)),
             e.label ? h('span', { key: 'ends' }, move) : null
           ]),
           h('div', { className: 'panel-body' },
             e.detail
               ? paragraphs(e.detail, 'detail')
-              : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
+              : h('p', { className: 'hint' },
+                  'No detail recorded for this ' + wordFor(f, e) + '.'),
             linkList(e.links, editor),
             trail(0)
           )
