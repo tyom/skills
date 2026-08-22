@@ -160,8 +160,13 @@
   aside .hint { margin: 16px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
 
   /* Where to read more: a web address, or a file opened in the editor. */
-  aside .links { margin: 18px 0 0; padding: 0; list-style: none; }
+  aside p.trail-label { margin: 22px 0 0; }
+  aside .links { margin: 7px 0 0; padding: 0; list-style: none; }
+  /* One reference reads as a sentence; several read as a list. */
+  aside .links.many { padding-left: 17px; list-style: disc; }
+  aside .links.many li::marker { color: var(--muted); }
   aside .links li { margin: 7px 0 0; font-size: 14px; line-height: 1.45; }
+  aside .links li:first-child { margin-top: 0; }
   aside .links a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
   aside .links a:hover { text-decoration: underline; }
   aside .links .ref {
@@ -769,7 +774,7 @@
     if (!list || !list.length) return null;
     return h(React.Fragment, null,
       h('p', { className: 'trail-label' }, 'References'),
-      h('ul', { className: 'links' }, list.map(function (l, i) {
+      h('ul', { className: list.length > 1 ? 'links many' : 'links' }, list.map(function (l, i) {
         if (l.abs) {
           return h('li', { key: i },
             fileLink(l, l.label, null, editor),
