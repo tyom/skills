@@ -90,21 +90,29 @@ def resolve_links(owner, where, root, warnings):
         if not isinstance(link, dict) or not (link.get("url") or link.get("path")):
             sys.exit(f"build.sh: {src} needs 'url' or 'path' at {where}.links[{k}]")
         if link.get("url"):
+            # The page renders a url as an anchor, so a scheme that carries code
+            # has no business reaching it.
+            if not link["url"].lower().startswith(("http://", "https://")):
+                sys.exit(f"build.sh: {src} needs an http(s) 'url' at {where}.links[{k}]")
             link.setdefault("label", link["url"])
             continue
         path, line = link["path"], link.get("line")
         f = (root / path).resolve()
-        if not f.is_relative_to(root):
+        inside = f.is_relative_to(root)
+        if not inside:
             warnings.append(("link escapes source root", f"{where}: {path}"))
         elif not f.is_file():
             warnings.append(("link file missing", f"{where}: {path}"))
         elif line and int(line) > line_count(f):
             warnings.append(("link line past end", f"{where}: {path}:{line}"))
-        link["abs"] = str(f)
-        link["line"] = int(line) if line else 1
         link["file"] = f"{path}:{line}" if line else path
         link.setdefault("label", link["file"])
-        file_links.append(link["file"])
+        # An opener is offered for a file that is there to open. A warned link
+        # still reads in the panel, as the path it claimed.
+        if inside and f.is_file():
+            link["abs"] = str(f)
+            link["line"] = int(line) if line else 1
+            file_links.append(link["file"])
 
 
 @functools.lru_cache(maxsize=None)
@@ -145,7 +153,7 @@ def check(flow, root):
             elif line and int(line) > line_count(f):
                 warnings.append(("ref line past end", f"{nid}: {ref}"))
             # The panel shows the ref; with a file behind it, it also opens it.
-            if f.is_file():
+            if f.is_file() and f.is_relative_to(root):
                 node["refLink"] = {"path": path, "abs": str(f),
                                    "line": int(line) if line else 1, "file": ref}
                 file_links.append(ref)

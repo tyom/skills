@@ -45,9 +45,9 @@ An external flow is researched before it is judged. Search for its authoritative
 
 Done when:
 
-- every source-backed node has a `path:line` ref;
-- every external flow links the sources its branches came from;
-- every node without a ref names the supporting decision or rule in `detail`, with the overall authority named in `summary`;
+- every node backed by local source has a `path:line` ref;
+- every node backed by an external source links the passage behind it, and the flow links the authority its branches came from;
+- every node backed by neither names the supporting decision or rule in `detail`, with the overall authority named in `summary`;
 - every decision has one outgoing edge per real outcome;
 - every path reaches an `end` or `success` node;
 - every `detail` is supported by the evidence.

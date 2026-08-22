@@ -694,12 +694,21 @@
     copy: { label: 'Copy path:line', url: null }
   };
 
+  // A path may hold a space, a # or an &, each of which ends a URL early or
+  // sends the rest of it somewhere else. Encoded per segment, so the
+  // separators survive.
+  function encodePath(abs) {
+    return abs.split('/').map(encodeURIComponent).join('/');
+  }
+
   function fileScheme(scheme) {
-    return function (l) { return scheme + '://file' + l.abs + ':' + l.line; };
+    return function (l) { return scheme + '://file' + encodePath(l.abs) + ':' + l.line; };
   }
 
   function urlQuery(scheme) {
-    return function (l) { return scheme + '://open?url=file://' + l.abs + '&line=' + l.line; };
+    return function (l) {
+      return scheme + '://open?url=file://' + encodePath(l.abs) + '&line=' + l.line;
+    };
   }
 
   function jetbrains(tool) {
@@ -753,8 +762,9 @@
     return h('a', { className: className, href: opener.url(link) }, label);
   }
 
-  // An http link leaves for the browser; an editor scheme has to stay in place,
-  // since a new tab for it would be left blank.
+  // build.sh has already settled that a url is http(s) and that an abs is a
+  // file inside the source root, so a link with neither is one it warned about:
+  // it reads as the path it claimed, without offering to open it.
   function linkList(list, editor) {
     if (!list || !list.length) return null;
     return h(React.Fragment, null,
@@ -766,14 +776,9 @@
             l.file !== l.label ? h('span', { className: 'ref' }, l.file) : null
           );
         }
-        var web = /^https?:/i.test(l.url);
-        return h('li', { key: i },
-          h('a', {
-            href: l.url,
-            target: web ? '_blank' : null,
-            rel: web ? 'noreferrer' : null
-          }, l.label)
-        );
+        return h('li', { key: i }, l.url
+          ? h('a', { href: l.url, target: '_blank', rel: 'noreferrer' }, l.label)
+          : h('span', null, l.label));
       }))
     );
   }
