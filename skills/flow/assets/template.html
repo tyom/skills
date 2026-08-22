@@ -895,17 +895,23 @@
     });
     dagre.layout(g);
 
-    var routes = Object.create(null), vertical = dir === 'TB';
+    var routes = Object.create(null), vertical = dir === 'TB', geom = [];
+    // Every route is turned into points first: a hop needs to know where the
+    // other routes run, so no path can be drawn until they all exist.
     routed.forEach(function (e) {
       var d = g.edge({ v: e.from, w: e.to, name: e.id });
       if (!d) return;
       var ends = snapEnds(d.points, g.node(e.from), g.node(e.to), vertical);
-      routes[e.id] = {
+      geom.push({ id: e.id, pts: orthogonal(ends, vertical), label: d });
+    });
+    var hops = hopsPerEdge(geom, vertical);
+    geom.forEach(function (gm) {
+      routes[gm.id] = {
         // Drawn once here, not per render: a route only moves when the layout does.
-        path: routePath(orthogonal(ends, vertical)),
+        path: routePath(gm.pts, hops[gm.id]),
         // dagre puts the label slot on the route, so the line runs under the
         // label and the label's own background masks it.
-        label: d.x === undefined ? null : { x: d.x, y: d.y }
+        label: gm.label.x === undefined ? null : { x: gm.label.x, y: gm.label.y }
       };
     });
 
@@ -1046,18 +1052,83 @@
     });
   }
 
-  function routePath(pts) {
+  // Two lines meeting at a point read as a junction. One of them steps over the
+  // other instead, the way a schematic hops a wire it does not join.
+  var HOP = 5;
+
+  function at(p, axis, v) {
+    return axis === 'x' ? { x: v, y: p.y } : { x: p.x, y: v };
+  }
+
+  // One straight run of the path, arcing over any crossing that lands on it far
+  // enough from either end to have room for the arc.
+  function lineTo(from, to, hops) {
+    var horiz = from.y === to.y, axis = horiz ? 'x' : 'y';
+    var dir = to[axis] < from[axis] ? -1 : 1, d = '';
+    (hops || []).filter(function (p) {
+      return (horiz ? p.y === from.y : p.x === from.x) &&
+        (p[axis] - from[axis]) * dir > HOP && (to[axis] - p[axis]) * dir > HOP;
+    }).sort(function (a, b) {
+      return (a[axis] - b[axis]) * dir;
+    }).forEach(function (p) {
+      var back = at(p, axis, p[axis] - dir * HOP);
+      var over = at(p, axis, p[axis] + dir * HOP);
+      d += ' L' + back.x + ' ' + back.y +
+        ' A' + HOP + ' ' + HOP + ' 0 0 ' + (dir > 0 ? 1 : 0) +
+        ' ' + over.x + ' ' + over.y;
+    });
+    return d + ' L' + to.x + ' ' + to.y;
+  }
+
+  function routePath(pts, hops) {
     if (!pts || pts.length < 2) return '';
-    var d = 'M' + pts[0].x + ' ' + pts[0].y;
+    var pen = pts[0], d = 'M' + pen.x + ' ' + pen.y;
     for (var i = 1; i < pts.length - 1; i++) {
       var a = pts[i - 1], c = pts[i], b = pts[i + 1];
       var r = Math.min(CORNER, dist(a, c) / 2, dist(c, b) / 2);
-      if (r < 1) { d += ' L' + c.x + ' ' + c.y; continue; }
+      if (r < 1) { d += lineTo(pen, c, hops); pen = c; continue; }
       var s = towards(c, a, r), e = towards(c, b, r);
-      d += ' L' + s.x + ' ' + s.y + ' Q' + c.x + ' ' + c.y + ',' + e.x + ' ' + e.y;
+      d += lineTo(pen, s, hops) + ' Q' + c.x + ' ' + c.y + ',' + e.x + ' ' + e.y;
+      pen = e;
     }
-    var last = pts[pts.length - 1];
-    return d + ' L' + last.x + ' ' + last.y;
+    return d + lineTo(pen, pts[pts.length - 1], hops);
+  }
+
+  // A crossing belongs to the line running across the flow: the trunks that
+  // carry it stay straight, and only the connectors between them hop.
+  // ponytail: every across-run against every along-run. O(n^2) on runs, which a
+  // diagram small enough to read can afford; index by lane if one never is.
+  function hopsPerEdge(geom, vertical) {
+    var out = Object.create(null), across = [], along = [];
+    geom.forEach(function (gm) {
+      out[gm.id] = [];
+      for (var i = 1; i < gm.pts.length; i++) {
+        var a = gm.pts[i - 1], b = gm.pts[i];
+        var withFlow = vertical ? a.x === b.x : a.y === b.y;
+        (withFlow ? along : across).push({ id: gm.id, a: a, b: b });
+      }
+    });
+    var run = vertical ? 'x' : 'y', cross = vertical ? 'y' : 'x';
+    across.forEach(function (s) {
+      var seen = Object.create(null);
+      along.forEach(function (t) {
+        if (t.id === s.id) return;
+        var p = at(s.a, run, t.a[run]);
+        // Clear of both ends, so a route that merely turns or arrives here is
+        // left alone: a hop is for lines that pass, not lines that meet.
+        if (!spans(p[run], s.a[run], s.b[run]) ||
+            !spans(p[cross], t.a[cross], t.b[cross])) return;
+        // Two edges sharing a lane cross at the same point; one arc is enough.
+        if (seen[p[run]]) return;
+        seen[p[run]] = true;
+        out[s.id].push(p);
+      });
+    });
+    return out;
+  }
+
+  function spans(v, a, b) {
+    return v > Math.min(a, b) + HOP && v < Math.max(a, b) - HOP;
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
