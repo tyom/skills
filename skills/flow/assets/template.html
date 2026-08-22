@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flow</title>
+<meta name="generator" content="tyom/skills/flow">
+<title>__TITLE__</title>
 <style>/*VENDOR_CSS*/</style>
 <style>
   :root, .canvas-light {
@@ -160,8 +161,13 @@
   aside .hint { margin: 16px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
 
   /* Where to read more: a web address, or a file opened in the editor. */
-  aside .links { margin: 18px 0 0; padding: 0; list-style: none; }
+  aside p.trail-label { margin: 22px 0 0; }
+  aside .links { margin: 7px 0 0; padding: 0; list-style: none; }
+  /* One reference reads as a sentence; several read as a list. */
+  aside .links.many { padding-left: 17px; list-style: disc; }
+  aside .links.many li::marker { color: var(--muted); }
   aside .links li { margin: 7px 0 0; font-size: 14px; line-height: 1.45; }
+  aside .links li:first-child { margin-top: 0; }
   aside .links a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
   aside .links a:hover { text-decoration: underline; }
   aside .links .ref {
@@ -387,12 +393,47 @@
   // Tracks .edge-label's font-size and horizontal padding; change those together.
   function labelWidth(text) { return text.length * 5.9 + 10; }
 
-  // Estimated from the lines the body will hold: padding + label, then a note
-  // and a ref if present. dagre spaces ranks off this, so a short guess crowds
-  // every edge between them.
+  // dagre needs a height before React has rendered anything, and a guess is
+  // wrong the moment a note wraps: the box then grows past the rect the route
+  // was aimed at, and an arrowhead arriving at the bottom face hides under it.
+  // So the body is measured off screen, once per distinct node. The markup here
+  // mirrors FlowNode's; change one, change the other.
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden';
+  document.body.appendChild(probe);
+  var measured = Object.create(null);
+
+  function bodyLine(cls, text) {
+    var el = document.createElement('div');
+    el.className = cls;
+    el.textContent = text;
+    return el;
+  }
+
   function heightOf(n) {
     if (isBar(n.kind)) return 22;
-    return 37 + (n.note ? 18 : 0) + (n.ref ? 17 : 0);
+    var kind = kindOf(n.kind), label = n.label || n.id;
+    var key = [kind, label, n.note || '', n.ref || ''].join('\u0000');
+    if (measured[key] === undefined) {
+      var box = document.createElement('div'), body = document.createElement('div');
+      box.className = 'node node-' + kind;
+      box.style.width = widthOf(kind) + 'px';
+      body.className = 'body';
+      body.appendChild(bodyLine('label', label));
+      if (n.note) body.appendChild(bodyLine('note', n.note));
+      // A ref is one line whatever it holds, since .ref .name ellipsises, but
+      // it has to be measured inside that span to stay one.
+      if (n.ref) {
+        var ref = bodyLine('ref', '');
+        ref.appendChild(bodyLine('name', n.ref));
+        body.appendChild(ref);
+      }
+      box.appendChild(body);
+      probe.appendChild(box);
+      measured[key] = box.offsetHeight;
+      probe.removeChild(box);
+    }
+    return measured[key];
   }
 
   // SVG fills and the minimap don't resolve CSS vars, so the palette is read
@@ -550,7 +591,6 @@
   }
 
   var doc = JSON.parse(document.getElementById('flow-data').textContent);
-  if (doc.title) document.title = doc.title;
 
   // Each tab is an independent graph: its own ids, its own validation, its own
   // adjacency. Nothing crosses between them. build.sh normalises the one-diagram
@@ -655,6 +695,13 @@
 
   function labelOf(f, id) {
     return (f.nodeById[id] && f.nodeById[id].label) || id;
+  }
+
+  // A link between two states is a transition; anywhere else it is an edge.
+  // The vocabulary follows the nodes, since a trace has no mode of its own.
+  function wordFor(f, e) {
+    var a = f.nodeById[e.from], b = f.nodeById[e.to];
+    return a && b && a.kind === 'state' && b.kind === 'state' ? 'transition' : 'edge';
   }
 
   function leadIn(n) {
@@ -769,7 +816,7 @@
     if (!list || !list.length) return null;
     return h(React.Fragment, null,
       h('p', { className: 'trail-label' }, 'References'),
-      h('ul', { className: 'links' }, list.map(function (l, i) {
+      h('ul', { className: list.length > 1 ? 'links many' : 'links' }, list.map(function (l, i) {
         if (l.abs) {
           return h('li', { key: i },
             fileLink(l, l.label, null, editor),
@@ -848,17 +895,23 @@
     });
     dagre.layout(g);
 
-    var routes = Object.create(null), vertical = dir === 'TB';
+    var routes = Object.create(null), vertical = dir === 'TB', geom = [];
+    // Every route is turned into points first: a hop needs to know where the
+    // other routes run, so no path can be drawn until they all exist.
     routed.forEach(function (e) {
       var d = g.edge({ v: e.from, w: e.to, name: e.id });
       if (!d) return;
       var ends = snapEnds(d.points, g.node(e.from), g.node(e.to), vertical);
-      routes[e.id] = {
+      geom.push({ id: e.id, pts: orthogonal(ends, vertical), label: d });
+    });
+    var hops = hopsPerEdge(geom, vertical);
+    geom.forEach(function (gm) {
+      routes[gm.id] = {
         // Drawn once here, not per render: a route only moves when the layout does.
-        path: routePath(orthogonal(ends, vertical)),
+        path: routePath(gm.pts, hops[gm.id]),
         // dagre puts the label slot on the route, so the line runs under the
         // label and the label's own background masks it.
-        label: d.x === undefined ? null : { x: d.x, y: d.y }
+        label: gm.label.x === undefined ? null : { x: gm.label.x, y: gm.label.y }
       };
     });
 
@@ -999,18 +1052,83 @@
     });
   }
 
-  function routePath(pts) {
+  // Two lines meeting at a point read as a junction. One of them steps over the
+  // other instead, the way a schematic hops a wire it does not join.
+  var HOP = 5;
+
+  function at(p, axis, v) {
+    return axis === 'x' ? { x: v, y: p.y } : { x: p.x, y: v };
+  }
+
+  // One straight run of the path, arcing over any crossing that lands on it far
+  // enough from either end to have room for the arc.
+  function lineTo(from, to, hops) {
+    var horiz = from.y === to.y, axis = horiz ? 'x' : 'y';
+    var dir = to[axis] < from[axis] ? -1 : 1, d = '';
+    (hops || []).filter(function (p) {
+      return (horiz ? p.y === from.y : p.x === from.x) &&
+        (p[axis] - from[axis]) * dir > HOP && (to[axis] - p[axis]) * dir > HOP;
+    }).sort(function (a, b) {
+      return (a[axis] - b[axis]) * dir;
+    }).forEach(function (p) {
+      var back = at(p, axis, p[axis] - dir * HOP);
+      var over = at(p, axis, p[axis] + dir * HOP);
+      d += ' L' + back.x + ' ' + back.y +
+        ' A' + HOP + ' ' + HOP + ' 0 0 ' + (dir > 0 ? 1 : 0) +
+        ' ' + over.x + ' ' + over.y;
+    });
+    return d + ' L' + to.x + ' ' + to.y;
+  }
+
+  function routePath(pts, hops) {
     if (!pts || pts.length < 2) return '';
-    var d = 'M' + pts[0].x + ' ' + pts[0].y;
+    var pen = pts[0], d = 'M' + pen.x + ' ' + pen.y;
     for (var i = 1; i < pts.length - 1; i++) {
       var a = pts[i - 1], c = pts[i], b = pts[i + 1];
       var r = Math.min(CORNER, dist(a, c) / 2, dist(c, b) / 2);
-      if (r < 1) { d += ' L' + c.x + ' ' + c.y; continue; }
+      if (r < 1) { d += lineTo(pen, c, hops); pen = c; continue; }
       var s = towards(c, a, r), e = towards(c, b, r);
-      d += ' L' + s.x + ' ' + s.y + ' Q' + c.x + ' ' + c.y + ',' + e.x + ' ' + e.y;
+      d += lineTo(pen, s, hops) + ' Q' + c.x + ' ' + c.y + ',' + e.x + ' ' + e.y;
+      pen = e;
     }
-    var last = pts[pts.length - 1];
-    return d + ' L' + last.x + ' ' + last.y;
+    return d + lineTo(pen, pts[pts.length - 1], hops);
+  }
+
+  // A crossing belongs to the line running across the flow: the trunks that
+  // carry it stay straight, and only the connectors between them hop.
+  // ponytail: every across-run against every along-run. O(n^2) on runs, which a
+  // diagram small enough to read can afford; index by lane if one never is.
+  function hopsPerEdge(geom, vertical) {
+    var out = Object.create(null), across = [], along = [];
+    geom.forEach(function (gm) {
+      out[gm.id] = [];
+      for (var i = 1; i < gm.pts.length; i++) {
+        var a = gm.pts[i - 1], b = gm.pts[i];
+        var withFlow = vertical ? a.x === b.x : a.y === b.y;
+        (withFlow ? along : across).push({ id: gm.id, a: a, b: b });
+      }
+    });
+    var run = vertical ? 'x' : 'y', cross = vertical ? 'y' : 'x';
+    across.forEach(function (s) {
+      var seen = Object.create(null);
+      along.forEach(function (t) {
+        if (t.id === s.id) return;
+        var p = at(s.a, run, t.a[run]);
+        // Clear of both ends, so a route that merely turns or arrives here is
+        // left alone: a hop is for lines that pass, not lines that meet.
+        if (!spans(p[run], s.a[run], s.b[run]) ||
+            !spans(p[cross], t.a[cross], t.b[cross])) return;
+        // Two edges sharing a lane cross at the same point; one arc is enough.
+        if (seen[p[run]]) return;
+        seen[p[run]] = true;
+        out[s.id].push(p);
+      });
+    });
+    return out;
+  }
+
+  function spans(v, a, b) {
+    return v > Math.min(a, b) + HOP && v < Math.max(a, b) - HOP;
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -1151,7 +1269,7 @@
         return {
           id: e.id, source: e.from, target: e.to, label: e.label || undefined,
           ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
-            ' to ' + labelOf(f, e.to) + '. Select to inspect this transition.',
+            ' to ' + labelOf(f, e.to) + '. Select to inspect this ' + wordFor(f, e) + '.',
           sourceHandle: 'sout', targetHandle: 'tin',
           type: 'flow',
           // A kind's colour is information and always shows; the accent is
@@ -1289,13 +1407,14 @@
         var move = labelOf(f, e.from) + ' → ' + labelOf(f, e.to);
         return h(React.Fragment, null,
           panelHead(e.label || move, [
-            tag(edgeKind(e.kind).color || MUTED, e.kind || 'edge'),
+            tag(edgeKind(e.kind).color || MUTED, e.kind || wordFor(f, e)),
             e.label ? h('span', { key: 'ends' }, move) : null
           ]),
           h('div', { className: 'panel-body' },
             e.detail
               ? paragraphs(e.detail, 'detail')
-              : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
+              : h('p', { className: 'hint' },
+                  'No detail recorded for this ' + wordFor(f, e) + '.'),
             linkList(e.links, editor),
             trail(0)
           )
