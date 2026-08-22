@@ -56,6 +56,88 @@ NODE_KINDS = {"start", "step", "decision", "io", "store", "end", "success",
               "fork", "join", "state"}
 EDGE_KINDS = {"async", "error", "retry"}
 
+# A browser cannot ask the OS for "the" editor, so a file link is written as the
+# URL scheme of one. Every editor here registers its own; anything else can be
+# given as a template.
+EDITORS = {
+    "vscode": "vscode://file{path}:{line}",
+    "cursor": "cursor://file{path}:{line}",
+    "windsurf": "windsurf://file{path}:{line}",
+    "zed": "zed://file{path}:{line}",
+}
+EDITORS.update({
+    name: name + "://open?file={path}&line={line}"
+    for name in ("idea", "webstorm", "pycharm", "phpstorm", "goland", "rubymine",
+                 "clion", "rider")
+})
+# What an editor calls itself, where that is not already the scheme it registers.
+IDE_NAMES = {"visual studio code": "vscode", "vs code": "vscode",
+             "intellij idea": "idea", "android studio": "idea"}
+
+
+def scheme_for(name):
+    key = " ".join(str(name).lower().split())
+    return IDE_NAMES.get(key) or (key.replace(" ", "") if key.replace(" ", "") in EDITORS else None)
+
+
+def detect_editor(root):
+    """Claude Code writes a lock file for each IDE it is connected to, naming the
+    IDE and the folders it has open. The one holding the source root is the
+    editor these links should open in; the terminal is the fallback."""
+    fallback = None
+    locks = sorted((pathlib.Path.home() / ".claude" / "ide").glob("*.lock"),
+                   key=lambda f: f.stat().st_mtime, reverse=True)
+    for lock in locks:
+        try:
+            info = json.loads(lock.read_text())
+        except (OSError, ValueError):
+            continue
+        name = scheme_for(info.get("ideName", ""))
+        if not name:
+            continue
+        for folder in info.get("workspaceFolders") or []:
+            if root == pathlib.Path(folder) or root.is_relative_to(folder):
+                return name
+        fallback = fallback or name
+    env = os.environ
+    if env.get("ZED_TERM"):
+        return "zed"
+    if env.get("TERM_PROGRAM") == "vscode":
+        bundle = env.get("__CFBundleIdentifier", "").lower()
+        return next((n for n in ("cursor", "windsurf") if n in bundle), "vscode")
+    return fallback or "vscode"
+
+
+file_links = []
+
+
+def resolve_links(owner, where, root, warnings):
+    """A link is either a web address, taken as written, or a path in the source
+    root, turned into an editor URL so it opens where the code is read."""
+    links = owner.get("links")
+    if links is None:
+        return
+    if not isinstance(links, list):
+        sys.exit(f"build.sh: {src} needs a 'links' array at {where}")
+    for k, link in enumerate(links):
+        if not isinstance(link, dict) or not (link.get("url") or link.get("path")):
+            sys.exit(f"build.sh: {src} needs 'url' or 'path' at {where}.links[{k}]")
+        if link.get("url"):
+            link.setdefault("label", link["url"])
+            continue
+        path, line = link["path"], link.get("line")
+        f = (root / path).resolve()
+        if not f.is_relative_to(root):
+            warnings.append(("link escapes source root", f"{where}: {path}"))
+        elif not f.is_file():
+            warnings.append(("link file missing", f"{where}: {path}"))
+        elif line and int(line) > line_count(f):
+            warnings.append(("link line past end", f"{where}: {path}:{line}"))
+        link["url"] = LINK_TEMPLATE.format(path=f, line=line or 1)
+        file_links.append(link["url"])
+        link["file"] = f"{path}:{line}" if line else path
+        link.setdefault("label", link["file"])
+
 
 @functools.lru_cache(maxsize=None)
 def line_count(f):
@@ -74,6 +156,7 @@ def check(flow, root):
         incoming[e["to"]].append(e)
 
     warnings, bad, seen = [], [], set()
+    resolve_links(flow, "flow", root, warnings)
     for node in nodes:
         nid, label = node["id"], node.get("label", "")
         if nid in seen:
@@ -93,6 +176,11 @@ def check(flow, root):
                 warnings.append(("ref file missing", f"{nid}: {ref}"))
             elif line and int(line) > line_count(f):
                 warnings.append(("ref line past end", f"{nid}: {ref}"))
+            # The panel shows the ref; with a file behind it, it also opens it.
+            if f.is_file():
+                node["refUrl"] = LINK_TEMPLATE.format(path=f, line=line or 1)
+                file_links.append(node["refUrl"])
+        resolve_links(node, nid, root, warnings)
         kind = node.get("kind", "step")
         if kind not in NODE_KINDS:
             bad.append(("unknown node kind", f"{nid}: {kind}"))
@@ -105,6 +193,7 @@ def check(flow, root):
 
     for e in edges:
         where = f"{e['from']} -> {e['to']}"
+        resolve_links(e, where, root, warnings)
         missing = [e[end] for end in ("from", "to") if e[end] not in by_id]
         if missing:
             bad.append(("edge points at a missing id", f"{where}: {', '.join(missing)}"))
@@ -146,6 +235,12 @@ def check(flow, root):
 # Checked before the page is written, so each flow can carry its own problems
 # and the badge on the page says exactly what this output says.
 root = pathlib.Path(os.environ["ROOT"]).resolve()
+editor = data.get("editor") or detect_editor(root)
+LINK_TEMPLATE = EDITORS.get(editor, editor)
+if "{path}" not in LINK_TEMPLATE:
+    sys.exit(f"build.sh: unknown editor {editor!r}: use one of "
+             f"{', '.join(EDITORS)}, or a template containing {{path}}")
+
 reports = [check(flow, root) for flow in flows]
 for flow, (_, bad) in zip(flows, reports):
     flow["problems"] = [f"{what}: {where}" for what, where in bad]
@@ -168,7 +263,8 @@ out = pathlib.Path(os.environ["OUT"])
 out.write_text(page)
 n = sum(len(f["nodes"]) for f in flows)
 e = sum(len(f["edges"]) for f in flows)
-print(f"{out}  ({len(page) // 1024}KB, {len(flows)} flow(s), {n} nodes, {e} edges)")
+opens = f", {len(file_links)} file link(s) opening in {editor}" if file_links else ""
+print(f"{out}  ({len(page) // 1024}KB, {len(flows)} flow(s), {n} nodes, {e} edges{opens})")
 
 for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
     if not warnings and not bad:

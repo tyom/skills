@@ -36,7 +36,8 @@ assets/build.sh /tmp/bad.json /tmp/flow-bad.html . ; echo "exit=$?"
 Expect `path stops, not an end`, exit 1, and the problem repeated in a badge on
 the page itself. Ref problems (`ref file missing`, `ref line past end`) are
 warnings instead — exit 0 — because a flow may trace a subject with no local
-source. Pass the wrong `<source-root>` to see them.
+source. Pass the wrong `<source-root>` to see them. A `links` entry with a
+`path` is checked the same way.
 
 ## Refresh the vendored runtime
 

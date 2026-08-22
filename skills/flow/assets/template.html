@@ -119,7 +119,7 @@
   .canvas-theme:hover { color: var(--ink); }
 
   aside {
-    width: clamp(272px, 26vw, 348px); flex: none; display: flex; flex-direction: column; min-height: 0;
+    width: clamp(288px, 27vw, 380px); flex: none; display: flex; flex-direction: column; min-height: 0;
     background: var(--panel); border-left: 1px solid var(--line);
   }
   .mobile-back { display: none; }
@@ -142,12 +142,26 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px; overflow-wrap: anywhere;
   }
+  aside .meta a { color: var(--accent); text-decoration: none; }
+  aside .meta a:hover { text-decoration: underline; }
   aside .tag { display: inline-flex; align-items: center; gap: 5px; }
   aside .tag .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 
-  aside .note { margin: 0 0 9px; font-size: 14px; font-style: italic; color: var(--muted); }
-  aside .detail { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
-  aside .hint { margin: 15px 0 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+  aside .note { margin: 0 0 10px; font-size: 15px; font-style: italic; color: var(--muted); }
+  aside .detail { margin: 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+  /* A summary or a detail may run to several paragraphs; each is its own <p>. */
+  aside .detail + .detail { margin-top: 11px; }
+  aside .hint { margin: 16px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+
+  /* Where to read more: a web address, or a file opened in the editor. */
+  aside .links { margin: 18px 0 0; padding: 0; list-style: none; }
+  aside .links li { margin: 7px 0 0; font-size: 14px; line-height: 1.45; }
+  aside .links a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+  aside .links a:hover { text-decoration: underline; }
+  aside .links .ref {
+    display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
 
   aside .trail { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
   aside .trail-label { font-size: 12px; color: var(--muted); }
@@ -164,7 +178,13 @@
        the spine has to carry the eye down five items. */
     background: color-mix(in srgb, var(--muted) 40%, transparent);
   }
-  aside .steps li { position: relative; padding: 4px 0 10px; cursor: pointer; }
+  aside .steps li { position: relative; padding: 4px 0 10px; }
+  /* Two things to do with a step, so two controls: open it, or open its file.
+     A link inside a button would be neither. */
+  aside .steps .open {
+    display: block; width: 100%; padding: 0; text-align: left;
+    font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+  }
   aside .steps li::before {
     counter-increment: step; content: counter(step);
     position: absolute; left: -26px; top: 4px; width: 15px; padding: 2px 0;
@@ -172,14 +192,16 @@
     font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
   }
   aside .steps li:hover, aside .steps li:hover::before { color: var(--accent); }
-  aside .steps li:focus-visible {
+  aside .steps .open:focus-visible, aside .steps .ref:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
   }
   aside .steps .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
   aside .steps .ref {
     display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-decoration: none;
   }
+  aside .steps a.ref:hover { color: var(--accent); text-decoration: underline; }
 
   /* The badge is loud about a broken trace, so its explanation cannot whisper. */
   aside .problems {
@@ -513,7 +535,8 @@
       .map(function (e, i) {
         return {
           id: 'e' + i, from: e.from, to: e.to,
-          label: e.label || '', kind: e.kind || '', detail: e.detail || ''
+          label: e.label || '', kind: e.kind || '', detail: e.detail || '',
+          links: e.links || null
         };
       });
 
@@ -524,7 +547,7 @@
     });
 
     return {
-      title: flow.title || '', summary: flow.summary || '',
+      title: flow.title || '', summary: flow.summary || '', links: flow.links || null,
       nodeList: nodeList, edgeItems: edgeItems,
       // build.sh checked this graph and wrote its verdict in, so the badge on
       // the page and the build output cannot disagree.
@@ -598,6 +621,34 @@
       out.push(part);
     });
     return h('div', { className: 'meta' }, out);
+  }
+
+  // Blank lines separate paragraphs; single newlines stay inside one, held by
+  // the pre-wrap on .detail.
+  function paragraphs(text, className) {
+    return String(text).split(/\n[ \t]*\n/).map(function (part, i) {
+      return h('p', { className: className, key: i }, part.trim());
+    });
+  }
+
+  // An http link leaves for the browser; an editor scheme has to stay in place,
+  // since a new tab for it would be left blank.
+  function linkList(list) {
+    if (!list || !list.length) return null;
+    return h(React.Fragment, null,
+      h('p', { className: 'trail-label' }, 'References'),
+      h('ul', { className: 'links' }, list.map(function (l, i) {
+        var web = /^https?:/i.test(l.url);
+        return h('li', { key: i },
+          h('a', {
+            href: l.url,
+            target: web ? '_blank' : null,
+            rel: web ? 'noreferrer' : null
+          }, l.label),
+          l.file && l.file !== l.label ? h('span', { className: 'ref' }, l.file) : null
+        );
+      }))
+    );
   }
 
   function tag(color, text) {
@@ -1022,15 +1073,14 @@
           var n = f.nodeById[id];
           var branch = branchOut(id);
           function open() { setSel({ kind: 'node', id: id }); }
-          return h('li', {
-            key: id, onClick: open, tabIndex: 0, role: 'button',
-            onKeyDown: function (ev) {
-              if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
-            }
-          },
-            labelOf(f, id),
-            branch ? h('span', { className: 'branch' }, '→ ' + branch) : null,
-            n.ref ? h('span', { className: 'ref' }, n.ref) : null
+          return h('li', { key: id },
+            h('button', { className: 'open', onClick: open },
+              labelOf(f, id),
+              branch ? h('span', { className: 'branch' }, '→ ' + branch) : null
+            ),
+            n.refUrl
+              ? h('a', { className: 'ref', href: n.refUrl }, n.ref)
+              : (n.ref ? h('span', { className: 'ref' }, n.ref) : null)
           );
         }))
       );
@@ -1045,11 +1095,17 @@
         return h(React.Fragment, null,
           panelHead(n.label || n.id, [
             tag(KIND_COLOR[kind], kind),
-            n.ref ? h('code', { key: 'ref' }, n.ref) : null
+            n.ref
+              ? h('code', { key: 'ref' },
+                  // Only a ref with a file behind it earns a link; the rest is
+                  // still worth showing.
+                  n.refUrl ? h('a', { href: n.refUrl }, n.ref) : n.ref)
+              : null
           ]),
           h('div', { className: 'panel-body' },
             n.note ? h('p', { className: 'note' }, n.note) : null,
-            h('p', { className: 'detail' }, n.detail || 'No detail recorded for this step.'),
+            paragraphs(n.detail || 'No detail recorded for this step.', 'detail'),
+            linkList(n.links),
             trail(1)
           )
         );
@@ -1066,8 +1122,9 @@
           ]),
           h('div', { className: 'panel-body' },
             e.detail
-              ? h('p', { className: 'detail' }, e.detail)
+              ? paragraphs(e.detail, 'detail')
               : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
+            linkList(e.links),
             trail(0)
           )
         );
@@ -1082,7 +1139,8 @@
           h('span', { key: 'e' }, f.edgeItems.length + ' edges')
         ]),
         h('div', { className: 'panel-body' },
-          f.summary ? h('p', { className: 'detail' }, f.summary) : null,
+          f.summary ? paragraphs(f.summary, 'detail') : null,
+          linkList(f.links),
           h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there. Hold Shift while scrolling to pan.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {

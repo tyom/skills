@@ -51,6 +51,15 @@ Write only `/tmp/YYYY-MM-DD-flow-<slug>.json`. Dagre computes coordinates and th
 
 Top-level fields are `title`, `summary`, `nodes`, and `edges`. For multiple tabs, use `title` plus a `flows` array; each flow has its own `title`, `summary`, `nodes`, and `edges`. Node ids are scoped to their flow.
 
+A `summary` or a `detail` may run to more than one paragraph: separate them with a blank line. Keep the first paragraph the one that answers the question.
+
+A flow, a node, and an edge may each carry `links`, the references shown under its detail:
+
+- `{ "label": "RFC 9110", "url": "https://..." }` for anything on the web.
+- `{ "label": "state_of()", "path": "link-skills.sh", "line": 18 }` for a file in the source root. `label` is optional and `line` may be omitted. The build turns it into an editor URL, so it opens where the code is read; the paths are checked like refs.
+
+The build works out which editor to open them in: the IDE connected to the source root, then the terminal it is running in, then VS Code. Set the top-level `editor` field to override it — `vscode`, `cursor`, `windsurf`, `zed`, a JetBrains IDE (`idea`, `webstorm`, `pycharm`, `phpstorm`, `goland`, `rubymine`, `clion`, `rider`), or a template of your own containing `{path}` and `{line}`. The build output names the editor it chose.
+
 Nodes:
 
 - `id`: unique within the flow.
@@ -58,9 +67,10 @@ Nodes:
 - `kind`: `start`, `step`, `decision`, `io`, `store`, `end`, `success`, `fork`, `join`, or `state`.
   `end` is any terminal; use `success` for one that completed successfully, so a
   flow with both outcomes does not paint them the same.
-- `ref`: `path:line` for source-backed nodes.
+- `ref`: `path:line` for source-backed nodes. Shown in the panel, and opened in the editor when the file is there.
 - `note`: optional short text visible on the node, such as an invariant or unit.
 - `detail`: one or two evidence-backed sentences shown after a click.
+- `links`: optional references, as above.
 
 Edges:
 
@@ -68,6 +78,7 @@ Edges:
 - `label`: the outcome of every `decision`, or the event in a state machine.
 - `kind`: optional `async`, `error`, or `retry`.
 - `detail`: optional evidence-backed explanation shown after a click.
+- `links`: optional references, as above.
 
 Use `fork` and `join` together when all branches run and later converge. Use `decision` when exactly one branch runs. Loops and opposite-direction edges are supported.
 

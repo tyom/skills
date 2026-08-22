@@ -1,27 +1,144 @@
 {
   "title": "link-skills.sh: how a skill's state is decided",
-  "summary": "How the dev helper classifies each skill in skills/ before linking it.",
+  "summary": "How the dev helper classifies each skill in skills/ before linking it.\n\nOnly the symlinks this repo made are ever touched: anything else at the target path is reported as a conflict and left alone.",
+  "links": [
+    {
+      "label": "skills.sh CLI",
+      "url": "https://skills.sh"
+    },
+    {
+      "label": "link-skills.sh",
+      "path": "link-skills.sh",
+      "line": 18
+    }
+  ],
   "nodes": [
-    { "id": "start", "label": "just status", "kind": "start", "ref": "justfile:9", "detail": "Runs ./link-skills.sh status, which walks every skills/*/SKILL.md." },
-    { "id": "walk", "label": "Walk repo skills", "kind": "step", "ref": "link-skills.sh:26", "detail": "repo_skills() globs $REPO_SKILLS/*/SKILL.md and yields the folder name for each one." },
-    { "id": "exists", "label": "Target exists?", "kind": "decision", "ref": "link-skills.sh:30", "detail": "state_of() looks at $GLOBAL/<name> in ~/.claude/skills." },
-    { "id": "absent", "label": "absent", "kind": "end", "ref": "link-skills.sh:33", "detail": "Nothing at the target path. `just link` will create the symlink." },
-    { "id": "islink", "label": "Is it a symlink?", "kind": "decision", "ref": "link-skills.sh:18", "detail": "links_here() requires -L before it will resolve the destination." },
-    { "id": "conflict", "label": "conflict", "kind": "end", "ref": "link-skills.sh:32", "detail": "A real directory, or a skill the skills.sh CLI installed. Left untouched." },
-    { "id": "resolve", "label": "Resolve destination", "kind": "io", "ref": "link-skills.sh:20", "detail": "readlink, then re-anchor a relative destination against $GLOBAL before comparing." },
-    { "id": "inrepo", "label": "Points into this repo?", "kind": "decision", "ref": "link-skills.sh:21", "detail": "Compares the symlink-free absolute path against $REPO_SKILLS/*." },
-    { "id": "linked", "label": "linked", "kind": "end", "ref": "link-skills.sh:31", "detail": "Ours. `just unlink` will remove it; edits to SKILL.md are already live." },
-    { "id": "foreign", "label": "conflict", "kind": "end", "ref": "link-skills.sh:21", "detail": "A symlink someone else made. The script only ever touches its own." }
+    {
+      "id": "start",
+      "label": "just status",
+      "kind": "start",
+      "ref": "justfile:9",
+      "detail": "Runs ./link-skills.sh status, which walks every skills/*/SKILL.md."
+    },
+    {
+      "id": "walk",
+      "label": "Walk repo skills",
+      "kind": "step",
+      "ref": "link-skills.sh:26",
+      "detail": "repo_skills() globs $REPO_SKILLS/*/SKILL.md and yields the folder name for each one."
+    },
+    {
+      "id": "exists",
+      "label": "Target exists?",
+      "kind": "decision",
+      "ref": "link-skills.sh:30",
+      "detail": "state_of() looks at $GLOBAL/<name> in ~/.claude/skills.",
+      "links": [
+        {
+          "path": "link-skills.sh",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "id": "absent",
+      "label": "absent",
+      "kind": "end",
+      "ref": "link-skills.sh:33",
+      "detail": "Nothing at the target path. `just link` will create the symlink."
+    },
+    {
+      "id": "islink",
+      "label": "Is it a symlink?",
+      "kind": "decision",
+      "ref": "link-skills.sh:18",
+      "detail": "links_here() requires -L before it will resolve the destination."
+    },
+    {
+      "id": "conflict",
+      "label": "conflict",
+      "kind": "end",
+      "ref": "link-skills.sh:32",
+      "detail": "A real directory, or a skill the skills.sh CLI installed. Left untouched."
+    },
+    {
+      "id": "resolve",
+      "label": "Resolve destination",
+      "kind": "io",
+      "ref": "link-skills.sh:20",
+      "detail": "readlink, then re-anchor a relative destination against $GLOBAL before comparing."
+    },
+    {
+      "id": "inrepo",
+      "label": "Points into this repo?",
+      "kind": "decision",
+      "ref": "link-skills.sh:21",
+      "detail": "Compares the symlink-free absolute path against $REPO_SKILLS/*."
+    },
+    {
+      "id": "linked",
+      "label": "linked",
+      "kind": "end",
+      "ref": "link-skills.sh:31",
+      "detail": "Ours. `just unlink` will remove it; edits to SKILL.md are already live."
+    },
+    {
+      "id": "foreign",
+      "label": "conflict",
+      "kind": "end",
+      "ref": "link-skills.sh:21",
+      "detail": "A symlink someone else made. The script only ever touches its own."
+    }
   ],
   "edges": [
-    { "from": "start", "to": "walk" },
-    { "from": "walk", "to": "exists" },
-    { "from": "exists", "to": "absent", "label": "no" },
-    { "from": "exists", "to": "islink", "label": "yes" },
-    { "from": "islink", "to": "conflict", "label": "no" },
-    { "from": "islink", "to": "resolve", "label": "yes" },
-    { "from": "resolve", "to": "inrepo" },
-    { "from": "inrepo", "to": "linked", "label": "yes" },
-    { "from": "inrepo", "to": "foreign", "label": "no" }
+    {
+      "from": "start",
+      "to": "walk"
+    },
+    {
+      "from": "walk",
+      "to": "exists"
+    },
+    {
+      "from": "exists",
+      "to": "absent",
+      "label": "no"
+    },
+    {
+      "from": "exists",
+      "to": "islink",
+      "label": "yes",
+      "links": [
+        {
+          "label": "state_of()",
+          "path": "link-skills.sh",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "from": "islink",
+      "to": "conflict",
+      "label": "no"
+    },
+    {
+      "from": "islink",
+      "to": "resolve",
+      "label": "yes"
+    },
+    {
+      "from": "resolve",
+      "to": "inrepo"
+    },
+    {
+      "from": "inrepo",
+      "to": "linked",
+      "label": "yes"
+    },
+    {
+      "from": "inrepo",
+      "to": "foreign",
+      "label": "no"
+    }
   ]
 }
