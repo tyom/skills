@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="tyom/skills/flow">
-<title>Flow</title>
+<title>__TITLE__</title>
 <style>/*VENDOR_CSS*/</style>
 <style>
   :root, .canvas-light {
@@ -591,7 +591,6 @@
   }
 
   var doc = JSON.parse(document.getElementById('flow-data').textContent);
-  if (doc.title) document.title = doc.title;
 
   // Each tab is an independent graph: its own ids, its own validation, its own
   // adjacency. Nothing crosses between them. build.sh normalises the one-diagram

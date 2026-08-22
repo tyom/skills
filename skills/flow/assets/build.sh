@@ -14,7 +14,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # ponytail: python3 for the substitution, not sed — 400KB of minified JS is full
 # of backslashes and & that sed would eat.
 DIR="$DIR" IN="$1" OUT="$2" ROOT="$3" python3 <<'PY'
-import collections, functools, json, os, pathlib, sys
+import collections, functools, html, json, os, pathlib, sys
 
 d = pathlib.Path(os.environ["DIR"])
 src = pathlib.Path(os.environ["IN"])
@@ -222,6 +222,9 @@ for flow, (_, bad) in zip(flows, reports):
 
 page = (d / "template.html").read_text()
 for marker, part in (
+    # The title is written into the head, not set by the script, so the file
+    # names itself in a listing or a bookmark that never runs it.
+    ("__TITLE__", html.escape(data.get("title") or "Flow")),
     ("/*VENDOR_CSS*/", (d / "vendor.css").read_text()),
     ("/*VENDOR_JS*/", (d / "vendor.js").read_text()),
     # </script> inside a string would close the data block early.
