@@ -1,6 +1,10 @@
 {
   "title": "link-skills.sh: how a skill's state is decided",
-  "summary": "How the dev helper classifies each skill in skills/ before linking it.",
+  "summary": "How the dev helper classifies each skill in skills/ before linking it.\n\nOnly the symlinks this repo made are ever touched: anything else at the target path is reported as a conflict and left alone.",
+  "links": [
+    { "label": "skills.sh CLI", "url": "https://skills.sh" },
+    { "label": "link-skills.sh", "path": "link-skills.sh", "line": 18 }
+  ],
   "nodes": [
     { "id": "start", "label": "just status", "kind": "start", "ref": "justfile:9", "detail": "Runs ./link-skills.sh status, which walks every skills/*/SKILL.md." },
     { "id": "walk", "label": "Walk repo skills", "kind": "step", "ref": "link-skills.sh:26", "detail": "repo_skills() globs $REPO_SKILLS/*/SKILL.md and yields the folder name for each one." },
@@ -17,7 +21,7 @@
     { "from": "start", "to": "walk" },
     { "from": "walk", "to": "exists" },
     { "from": "exists", "to": "absent", "label": "no" },
-    { "from": "exists", "to": "islink", "label": "yes" },
+    { "from": "exists", "to": "islink", "label": "yes", "links": [{ "label": "state_of()", "path": "link-skills.sh", "line": 28 }] },
     { "from": "islink", "to": "conflict", "label": "no" },
     { "from": "islink", "to": "resolve", "label": "yes" },
     { "from": "resolve", "to": "inrepo" },

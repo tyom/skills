@@ -70,6 +70,14 @@ A roster is not a diagram. A call tree three deep, three contacts each, is 40
 nodes doing four distinct things. Draw one participant's procedure once, where
 the branching is, and leave the roster as a table.
 
+## Subjects with no code here at all
+
+A protocol, a standard, a vendor's API, a product's own rules. Both tests still
+apply, and the branching has to come from the specification: research it first,
+then trace what it says. `links` carries the sources, since there is no
+`path:line` to carry them. A well-specified handshake is a strong subject; a
+topic whose authority you cannot find is the guess this skill exists to avoid.
+
 ## Send these elsewhere
 
 - **A straight chain.** No decisions, no forks. Write the list.

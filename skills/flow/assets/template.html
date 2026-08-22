@@ -6,7 +6,7 @@
 <title>Flow</title>
 <style>/*VENDOR_CSS*/</style>
 <style>
-  :root {
+  :root, .canvas-light {
     --bg: #f6f7f9; --panel: #fff; --ink: #14171a; --muted: #6b7280;
     --line: #e3e6ea; --accent: #2563eb;
     --start: #059669; --step: #64748b; --decision: #d97706;
@@ -14,14 +14,15 @@
     --success: #059669; --join: var(--fork);
     --ok: var(--success); --bad: var(--end);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
-      --line: #2a3038; --accent: #60a5fa;
-      --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
-      --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
-      --success: #34d399;
-    }
+  /* The dark palette, written once. The page wears this class to follow the
+     system; the canvas wears it on its own so it can be dark while the page is
+     light, and an exported sheet carries it with it. */
+  .canvas-dark {
+    --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
+    --line: #2a3038; --accent: #60a5fa;
+    --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
+    --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
+    --success: #34d399;
   }
   * { box-sizing: border-box; }
   html, body, #root { height: 100%; margin: 0; }
@@ -58,6 +59,20 @@
     outline: 3px solid var(--accent); outline-offset: 2px;
   }
   .export { position: relative; display: flex; align-self: center; }
+  header .opener {
+    align-self: center; font: inherit; font-size: 12px; padding: 4px 6px;
+    color: var(--ink); background: var(--bg); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  header .opener:hover { border-color: var(--accent); }
+  /* Copying is the opener of last resort, so it wears the link it replaces. */
+  .as-link {
+    padding: 0; font: inherit; color: var(--accent); background: none;
+    border: 0; cursor: pointer; text-align: left;
+  }
+  .as-link:hover { text-decoration: underline; }
+  aside .steps .as-link { color: var(--muted); }
+  aside .steps .as-link:hover { color: var(--accent); }
   .export-menu {
     position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
     min-width: 142px; padding: 4px; background: var(--panel);
@@ -69,6 +84,10 @@
     background: none; border: 0;
   }
   header .export-menu button:hover { background: var(--bg); }
+  .export-menu label {
+    display: flex; align-items: center; gap: 7px; padding: 6px 8px;
+    margin-top: 4px; border-top: 1px solid var(--line); cursor: pointer;
+  }
   /* A tab is navigation, not an option: no box, and its indicator sits down on
      the header's own bottom rule so the strip reads as the edge of the canvas. */
   header .tab {
@@ -81,23 +100,32 @@
   .edge-legend {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
     max-width: calc(100% - 30px); padding: 7px 9px;
-    color: var(--muted); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 6px; font-size: 11px; white-space: nowrap; pointer-events: none;
+    color: var(--muted); background: var(--panel); border-radius: 6px;
+    font-size: 11px; white-space: nowrap; pointer-events: none;
   }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
   .badge {
-    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    font-size: 12px; padding: 2px 9px; border-radius: 999px;
     border: 1px solid currentColor; cursor: help; align-self: center;
   }
-  .badge.ok { color: var(--ok); padding: 3px 7px; }
+  .badge.ok { color: var(--ok); padding: 2px 7px; }
   .badge.bad { color: var(--bad); }
 
   main { flex: 1; display: flex; min-height: 0; }
-  .canvas { flex: 1; min-width: 0; }
+  /* Both, not just the background: colour inherits as a resolved value, so
+     text under a flipped canvas has to pick up the palette here. */
+  .canvas { flex: 1; min-width: 0; background: var(--bg); color: var(--ink); }
+  .canvas-tools { display: flex; align-items: stretch; gap: 6px; }
+  .canvas-theme {
+    padding: 7px 9px; color: var(--muted); background: var(--panel);
+    border: 0; border-radius: 6px; font: inherit; font-size: 11px;
+    line-height: 1; cursor: pointer;
+  }
+  .canvas-theme:hover { color: var(--ink); }
 
   aside {
-    width: clamp(272px, 26vw, 348px); flex: none; display: flex; flex-direction: column; min-height: 0;
+    width: clamp(288px, 27vw, 380px); flex: none; display: flex; flex-direction: column; min-height: 0;
     background: var(--panel); border-left: 1px solid var(--line);
   }
   .mobile-back { display: none; }
@@ -120,12 +148,26 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px; overflow-wrap: anywhere;
   }
+  aside .meta a { color: var(--accent); text-decoration: none; }
+  aside .meta a:hover { text-decoration: underline; }
   aside .tag { display: inline-flex; align-items: center; gap: 5px; }
   aside .tag .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 
-  aside .note { margin: 0 0 9px; font-size: 14px; font-style: italic; color: var(--muted); }
-  aside .detail { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
-  aside .hint { margin: 15px 0 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+  aside .note { margin: 0 0 10px; font-size: 15px; font-style: italic; color: var(--muted); }
+  aside .detail { margin: 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+  /* A summary or a detail may run to several paragraphs; each is its own <p>. */
+  aside .detail + .detail { margin-top: 11px; }
+  aside .hint { margin: 16px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+
+  /* Where to read more: a web address, or a file opened in the editor. */
+  aside .links { margin: 18px 0 0; padding: 0; list-style: none; }
+  aside .links li { margin: 7px 0 0; font-size: 14px; line-height: 1.45; }
+  aside .links a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+  aside .links a:hover { text-decoration: underline; }
+  aside .links .ref {
+    display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
 
   aside .trail { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
   aside .trail-label { font-size: 12px; color: var(--muted); }
@@ -142,7 +184,13 @@
        the spine has to carry the eye down five items. */
     background: color-mix(in srgb, var(--muted) 40%, transparent);
   }
-  aside .steps li { position: relative; padding: 4px 0 10px; cursor: pointer; }
+  aside .steps li { position: relative; padding: 4px 0 10px; }
+  /* Two things to do with a step, so two controls: open it, or open its file.
+     A link inside a button would be neither. */
+  aside .steps .open {
+    display: block; width: 100%; padding: 0; text-align: left;
+    font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+  }
   aside .steps li::before {
     counter-increment: step; content: counter(step);
     position: absolute; left: -26px; top: 4px; width: 15px; padding: 2px 0;
@@ -150,14 +198,16 @@
     font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
   }
   aside .steps li:hover, aside .steps li:hover::before { color: var(--accent); }
-  aside .steps li:focus-visible {
+  aside .steps .open:focus-visible, aside .steps .ref:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
   }
   aside .steps .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
   aside .steps .ref {
     display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-decoration: none;
   }
+  aside .steps a.ref:hover { color: var(--accent); text-decoration: underline; }
 
   /* The badge is loud about a broken trace, so its explanation cannot whisper. */
   aside .problems {
@@ -174,7 +224,13 @@
   }
   .node:active { cursor: grabbing; }
   .node .body { padding: 8px 12px; }
-  .node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  /* A gap between the node and its ring, because --accent is also a kind colour
+     — an `io` node is the same blue, and a plain thicker border read as one
+     that had been selected. A halo is a shape no kind can imitate. */
+  .node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
   .node.dim { opacity: .22; }
   .react-flow__edge { transition: opacity .15s; }
   .react-flow__edge.dim { opacity: .1; }
@@ -237,7 +293,9 @@
   /* A bar is pinned to its height, so only the label fits. The note and the ref
      are still there — they read in the panel. */
   .node-fork .ref, .node-join .ref, .node-fork .note, .node-join .note { display: none; }
-  .node-fork.selected, .node-join.selected { box-shadow: 0 0 0 2px var(--accent); }
+  .node-fork.selected, .node-join.selected {
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
 
   /* Labels are rendered into React Flow's label layer, above every path, so a
      line crossing the band cannot strike through the text that names it. */
@@ -286,6 +344,21 @@
     .node, .react-flow__edge { transition: none; }
   }
 </style>
+<!-- The page follows the system by wearing the canvas classes, so the dark
+     palette lives in one place. In the head, because the body paints its
+     background before the runtime below has finished parsing. -->
+<script>
+(function () {
+  var dark = matchMedia('(prefers-color-scheme: dark)');
+  function apply() {
+    var root = document.documentElement.classList;
+    root.toggle('canvas-dark', dark.matches);
+    root.toggle('canvas-light', !dark.matches);
+  }
+  apply();
+  dark.addEventListener('change', apply);
+})();
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -393,19 +466,21 @@
     return box;
   }
 
-  function svgExport(nodes, title) {
+  function svgExport(nodes, title, withBackground) {
     var source = document.querySelector('.canvas .react-flow');
     if (!source) throw new Error('Flow canvas not found');
     var clone = source.cloneNode(true), bounds = exportBounds(nodes, source), pad = 32;
     var graphWidth = Math.ceil(bounds.x2 - bounds.x1 + pad * 2);
     var graphHeight = Math.ceil(bounds.y2 - bounds.y1 + pad * 2);
     var width = Math.max(640, graphWidth), headHeight = 64, height = graphHeight + headHeight;
-    var theme = getComputedStyle(document.documentElement);
+    var canvas = source.closest('.canvas');
+    var theme = getComputedStyle(canvas);
     var bodyStyle = getComputedStyle(document.body);
     var sheet = document.createElement('div'), head = document.createElement('div');
     var heading = document.createElement('div'), legend = source.querySelector('.edge-legend').cloneNode(true);
+    sheet.className = canvas.classList.contains('canvas-dark') ? 'canvas-dark' : 'canvas-light';
     sheet.style.width = width + 'px'; sheet.style.height = height + 'px';
-    sheet.style.background = theme.getPropertyValue('--bg');
+    if (withBackground) sheet.style.background = theme.getPropertyValue('--bg');
     sheet.style.color = theme.getPropertyValue('--ink');
     sheet.style.fontFamily = bodyStyle.fontFamily;
     sheet.style.fontSize = bodyStyle.fontSize;
@@ -421,7 +496,7 @@
     legend.style.display = 'flex';
     head.appendChild(heading); head.appendChild(legend);
     clone.style.width = width + 'px'; clone.style.height = graphHeight + 'px';
-    clone.style.background = theme.getPropertyValue('--bg');
+    if (withBackground) clone.style.background = theme.getPropertyValue('--bg');
     clone.style.color = theme.getPropertyValue('--ink');
     clone.style.fontFamily = bodyStyle.fontFamily;
     clone.style.fontSize = bodyStyle.fontSize;
@@ -447,8 +522,8 @@
     };
   }
 
-  function exportFlow(nodes, title, format) {
-    var image = svgExport(nodes, title);
+  function exportFlow(nodes, title, format, withBackground) {
+    var image = svgExport(nodes, title, withBackground);
     if (format === 'svg') {
       download(image.blob, fileName(title, 'svg'));
       return Promise.resolve();
@@ -489,7 +564,8 @@
       .map(function (e, i) {
         return {
           id: 'e' + i, from: e.from, to: e.to,
-          label: e.label || '', kind: e.kind || '', detail: e.detail || ''
+          label: e.label || '', kind: e.kind || '', detail: e.detail || '',
+          links: e.links || null
         };
       });
 
@@ -500,7 +576,7 @@
     });
 
     return {
-      title: flow.title || '', summary: flow.summary || '',
+      title: flow.title || '', summary: flow.summary || '', links: flow.links || null,
       nodeList: nodeList, edgeItems: edgeItems,
       // build.sh checked this graph and wrote its verdict in, so the badge on
       // the page and the build output cannot disagree.
@@ -531,22 +607,41 @@
   function unique(a) { return Array.from(new Set(a)); }
 
   // --- what leads here ------------------------------------------------------
-  // Everything on a forward path into nodeId, by hop count. An edge kind that
-  // does not carry the flow forward is not crossed; see EDGE_KINDS.
+  // One route in, not every route. A flow that loops has ancestors on all sides
+  // of a node — after an aspect change the crop editor comes back round into the
+  // step that computes the frame — and lighting the whole ancestor set paints
+  // the loop as though it led here. So the walk back records the edge each
+  // ancestor was found through, then follows those edges forward again from a
+  // single origin. Breadth-first, so the route it keeps is the shortest one. An
+  // edge kind that does not carry the flow forward is not crossed; see
+  // EDGE_KINDS.
   function upstream(f, nodeId) {
-    var edges = Object.create(null), dist = Object.create(null);
-    var queue = [nodeId];
-    dist[nodeId] = 0;
+    var seen = Object.create(null), via = Object.create(null);
+    var queue = [nodeId], far = nodeId, start = null;
+    seen[nodeId] = true;
     while (queue.length) {
       var cur = queue.shift();
       (f.incoming[cur] || []).forEach(function (e) {
-        if (edgeKind(e.kind).progress === false) return;
-        edges[e.id] = true;
-        if (dist[e.from] === undefined) {
-          dist[e.from] = dist[cur] + 1;
-          queue.push(e.from);
-        }
+        if (edgeKind(e.kind).progress === false || seen[e.from]) return;
+        seen[e.from] = true;
+        via[e.from] = e;
+        queue.push(e.from);
+        far = e.from;
+        // The nearest start is where a reader would begin, so it wins over the
+        // furthest node, which in a loop is only the long way round.
+        if (!start && kindOf((f.nodeById[e.from] || {}).kind) === 'start') start = e.from;
       });
+    }
+
+    // via[x] is the edge out of x towards nodeId, so following it always closes
+    // the distance and the walk forward cannot circle.
+    var edges = Object.create(null), dist = Object.create(null), hops = 0;
+    var origin = start || far, at;
+    for (at = origin; at !== nodeId; at = via[at].to) hops++;
+    for (at = origin; ; at = via[at].to) {
+      dist[at] = hops--;
+      if (at === nodeId) break;
+      edges[via[at].id] = true;
     }
     return { edges: edges, dist: dist };
   }
@@ -574,6 +669,118 @@
       out.push(part);
     });
     return h('div', { className: 'meta' }, out);
+  }
+
+  // Blank lines separate paragraphs; single newlines stay inside one, held by
+  // the pre-wrap on .detail.
+  function paragraphs(text, className) {
+    return String(text).split(/\n[ \t]*\n/).map(function (part, i) {
+      return h('p', { className: className, key: i }, part.trim());
+    });
+  }
+
+  // Every opener the page can build, since the reader may not use the editor the
+  // trace was built on. JetBrains IDEs take a project-relative path and route
+  // through the jetbrains: handler; the rest take the absolute path.
+  var OPENERS = {
+    vscode: { label: 'VS Code', url: fileScheme('vscode') },
+    cursor: { label: 'Cursor', url: fileScheme('cursor') },
+    windsurf: { label: 'Windsurf', url: fileScheme('windsurf') },
+    zed: { label: 'Zed', url: fileScheme('zed') },
+    sublime: { label: 'Sublime Text', url: urlQuery('subl') },
+    textmate: { label: 'TextMate', url: urlQuery('txmt') },
+    webstorm: { label: 'WebStorm', url: jetbrains('webstorm') },
+    idea: { label: 'IntelliJ IDEA', url: jetbrains('idea') },
+    copy: { label: 'Copy path:line', url: null }
+  };
+
+  // A path may hold a space, a # or an &, each of which ends a URL early or
+  // sends the rest of it somewhere else. Encoded per segment, so the
+  // separators survive.
+  function encodePath(abs) {
+    return abs.split('/').map(encodeURIComponent).join('/');
+  }
+
+  function fileScheme(scheme) {
+    return function (l) { return scheme + '://file' + encodePath(l.abs) + ':' + l.line; };
+  }
+
+  function urlQuery(scheme) {
+    return function (l) {
+      return scheme + '://open?url=file://' + encodePath(l.abs) + '&line=' + l.line;
+    };
+  }
+
+  function jetbrains(tool) {
+    return function (l) {
+      return 'jetbrains://' + tool + '/navigate/reference?project=' +
+        encodeURIComponent(doc.project || '') + '&path=' +
+        encodeURIComponent(l.path + ':' + l.line);
+    };
+  }
+
+  var EDITOR_KEY = 'flow:editor';
+  function readEditor() {
+    try {
+      var saved = localStorage.getItem(EDITOR_KEY);
+      if (saved && OPENERS[saved]) return saved;
+    } catch (e) { /* no store */ }
+    return OPENERS[doc.editor] ? doc.editor : 'vscode';
+  }
+
+  function copyText(text) {
+    function fallback() {
+      var box = document.createElement('textarea');
+      box.value = text; document.body.appendChild(box); box.select();
+      try { document.execCommand('copy'); } finally { box.remove(); }
+    }
+    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(fallback);
+    else fallback();
+  }
+
+  function CopyRef(props) {
+    var state = useState(false), done = state[0], setDone = state[1];
+    return h('button', {
+      className: props.className, title: 'Copy ' + props.copy,
+      onClick: function () {
+        copyText(props.copy); setDone(true);
+        setTimeout(function () { setDone(false); }, 1200);
+      }
+    }, done ? 'copied' : props.label);
+  }
+
+  // One renderer for every path:line on the page. The chosen opener decides
+  // whether that is a link into an editor or something to copy.
+  function fileLink(link, label, className, editor) {
+    var opener = OPENERS[editor] || OPENERS.vscode;
+    if (!opener.url) {
+      return h(CopyRef, {
+        className: (className ? className + ' ' : '') + 'as-link',
+        label: label, copy: link.file
+      });
+    }
+    return h('a', { className: className, href: opener.url(link) }, label);
+  }
+
+  // build.sh has already settled that a url is http(s) and that an abs is a
+  // file inside the source root, so a link with neither is one it warned about:
+  // it reads as the path it claimed, without offering to open it.
+  function linkList(list, editor) {
+    if (!list || !list.length) return null;
+    return h(React.Fragment, null,
+      h('p', { className: 'trail-label' }, 'References'),
+      h('ul', { className: 'links' }, list.map(function (l, i) {
+        if (l.abs) {
+          return h('li', { key: i },
+            fileLink(l, l.label, null, editor),
+            l.file !== l.label ? h('span', { className: 'ref' }, l.file) : null
+          );
+        }
+        return h('li', { key: i }, l.url
+          ? h('a', { href: l.url, target: '_blank', rel: 'noreferrer' }, l.label)
+          : h('span', null, l.label));
+      }))
+    );
   }
 
   function tag(color, text) {
@@ -837,10 +1044,13 @@
     var mapState = useState(function () { return readToggle(MAP_KEY); });
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
+    var bgState = useState(true), exportBg = bgState[0], setExportBg = bgState[1];
+    var editorState = useState(readEditor), editor = editorState[0], setEditor = editorState[1];
+    var themeState = useState(function () {
+      return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    });
+    var canvasTheme = themeState[0], setCanvasTheme = themeState[1];
     var exportRef = useRef(null);
-    // Where the reader has dragged things. Empty means dagre's layout, untouched.
-    var movedState = useState({}), moved = movedState[0], setMoved = movedState[1];
-
     var f = flows[tab];
 
     useEffect(function () {
@@ -871,54 +1081,62 @@
     // Selecting anything asks the same question: what leads here?
     var lit = useMemo(function () {
       if (!sel) return null;
-      if (sel.kind === 'node') return upstream(f, sel.id);
-      var e = f.edgeById[sel.id];
-      var up = upstream(f, e.from);
-      up.edges[e.id] = true;
-      // Lit, but not a step that leads here: it is where this edge arrives.
-      if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
+      var at = placedNodes.reduce(function (m, n) {
+        m[n.id] = dir === 'TB' ? n.position.y : n.position.x;
+        return m;
+      }, Object.create(null));
+      var id = sel.kind === 'node' ? sel.id : f.edgeById[sel.id].from;
+      var up = upstream(f, id);
+
+      // A selected node has a shape: the route is one way in and it may have
+      // others, which light too, or a step with two parents looks as though it
+      // had one. Only the ones the layout draws arriving, though — an edge from
+      // a node placed further down is the loop coming back, and lighting that
+      // reads as the selection pointing at something. Lit at -1, so they stay
+      // out of the trail, which is still a single path.
+      //
+      // A selected edge has no such shape. It asks what leads to this one edge,
+      // so the other ways into the node it leaves are no part of the answer.
+      if (sel.kind === 'node') {
+        (f.incoming[id] || []).forEach(function (e) {
+          if (at[e.from] < at[e.to] && up.dist[e.from] === undefined) up.dist[e.from] = -1;
+        });
+      }
+      // Then every edge between two lit nodes, in either direction. Which nodes
+      // light is already settled above, so this only draws what runs between
+      // them: an added parent hangs off the route instead of floating, a second
+      // edge between the same pair lights beside the first, and the loop home
+      // lights when both its ends are on show. A dim node keeps its edges dim,
+      // which is what holds the loop back in the first place.
+      f.edgeItems.forEach(function (e) {
+        if (up.dist[e.from] !== undefined && up.dist[e.to] !== undefined) {
+          up.edges[e.id] = true;
+        }
+      });
+
+      if (sel.kind === 'edge') {
+        var e = f.edgeById[sel.id];
+        up.edges[e.id] = true;
+        // Lit, but not a step that leads here: it is where this edge arrives.
+        if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
+      }
       return up;
-    }, [f, sel]);
+    }, [f, sel, placedNodes, dir]);
 
     var nodes = useMemo(function () {
       return placedNodes.map(function (n) {
         return Object.assign({}, n, {
-          position: moved[n.id] || n.position,
           data: Object.assign({}, n.data, {
             selected: !!sel && sel.kind === 'node' && sel.id === n.id,
             dim: !!lit && lit.dist[n.id] === undefined
           })
         });
       });
-    }, [placedNodes, sel, lit, moved]);
+    }, [placedNodes, sel, lit]);
 
-    // Relayout moves every node, so the old viewport frames nothing — and every
-    // hand-placed position belonged to the layout that just went away.
+    // Relayout moves every node, so the old viewport frames nothing.
     var fitView = RF.useReactFlow().fitView;
-    useEffect(function () {
-      setMoved(function (prev) { return Object.keys(prev).length ? {} : prev; });
-      fitView(FIT);
-    }, [f, dir, fitView]);
-
-    var basePos = useMemo(function () {
-      return placedNodes.reduce(function (m, n) { m[n.id] = n.position; return m; }, Object.create(null));
-    }, [placedNodes]);
-
-    var onNodesChange = useCallback(function (changes) {
-      var dragged = null;
-      changes.forEach(function (c) {
-        if (c.type !== 'position' || !c.position) return;
-        // Mount echoes the layout position back; a node left where dagre put it
-        // is not something to offer a reset from.
-        var base = basePos[c.id];
-        if (base && c.position.x === base.x && c.position.y === base.y) return;
-        dragged = dragged || {};
-        dragged[c.id] = c.position;
-      });
-      if (dragged) {
-        setMoved(function (prev) { return Object.assign({}, prev, dragged); });
-      }
-    }, [basePos]);
+    useEffect(function () { fitView(FIT); }, [f, dir, fitView]);
 
     var selectEdge = useCallback(function (id) {
       setSel({ kind: 'edge', id: id });
@@ -969,15 +1187,21 @@
       if (!lit) return baseEdges;
       return baseEdges.map(function (b) {
         var on = !!lit.edges[b.id];
+        // A node wears a ring when it is the selection; an edge had nothing, so
+        // the one that was clicked looked no different from the route drawn to
+        // reach it. Weight says which is which.
+        var picked = sel.kind === 'edge' && sel.id === b.id;
         var stroke = b.color || (on ? ACCENT : MUTED);
         return Object.assign({}, b, {
           data: Object.assign({}, b.data, { dim: !on }),
           className: on ? undefined : 'dim',
-          style: Object.assign({}, b.style, { stroke: stroke, strokeWidth: on ? 2 : 1.5 }),
+          style: Object.assign({}, b.style, {
+            stroke: stroke, strokeWidth: picked ? 3.5 : (on ? 2 : 1.5)
+          }),
           markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
         });
       });
-    }, [baseEdges, lit]);
+    }, [baseEdges, lit, sel]);
 
     var onNodeClick = useCallback(function (_, node) {
       setSel({ kind: 'node', id: node.id });
@@ -995,7 +1219,7 @@
       // svgExport throws synchronously when the canvas is missing, so the call
       // goes through a promise to keep both failures on one handler.
       Promise.resolve().then(function () {
-        return exportFlow(nodes, f.title || doc.title || 'Flow', format);
+        return exportFlow(nodes, f.title || doc.title || 'Flow', format, exportBg);
       }).catch(function (error) {
         console.error(error); alert('Could not export this flow.');
       });
@@ -1021,15 +1245,14 @@
           var n = f.nodeById[id];
           var branch = branchOut(id);
           function open() { setSel({ kind: 'node', id: id }); }
-          return h('li', {
-            key: id, onClick: open, tabIndex: 0, role: 'button',
-            onKeyDown: function (ev) {
-              if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
-            }
-          },
-            labelOf(f, id),
-            branch ? h('span', { className: 'branch' }, '→ ' + branch) : null,
-            n.ref ? h('span', { className: 'ref' }, n.ref) : null
+          return h('li', { key: id },
+            h('button', { className: 'open', onClick: open },
+              labelOf(f, id),
+              branch ? h('span', { className: 'branch' }, '→ ' + branch) : null
+            ),
+            n.refLink
+              ? fileLink(n.refLink, n.ref, 'ref', editor)
+              : (n.ref ? h('span', { className: 'ref' }, n.ref) : null)
           );
         }))
       );
@@ -1044,11 +1267,17 @@
         return h(React.Fragment, null,
           panelHead(n.label || n.id, [
             tag(KIND_COLOR[kind], kind),
-            n.ref ? h('code', { key: 'ref' }, n.ref) : null
+            n.ref
+              ? h('code', { key: 'ref' },
+                  // Only a ref with a file behind it opens; the rest is still
+                  // worth showing.
+                  n.refLink ? fileLink(n.refLink, n.ref, null, editor) : n.ref)
+              : null
           ]),
           h('div', { className: 'panel-body' },
             n.note ? h('p', { className: 'note' }, n.note) : null,
-            h('p', { className: 'detail' }, n.detail || 'No detail recorded for this step.'),
+            paragraphs(n.detail || 'No detail recorded for this step.', 'detail'),
+            linkList(n.links, editor),
             trail(1)
           )
         );
@@ -1065,8 +1294,9 @@
           ]),
           h('div', { className: 'panel-body' },
             e.detail
-              ? h('p', { className: 'detail' }, e.detail)
+              ? paragraphs(e.detail, 'detail')
               : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
+            linkList(e.links, editor),
             trail(0)
           )
         );
@@ -1081,8 +1311,9 @@
           h('span', { key: 'e' }, f.edgeItems.length + ' edges')
         ]),
         h('div', { className: 'panel-body' },
-          f.summary ? h('p', { className: 'detail' }, f.summary) : null,
-          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there. Hold Shift while scrolling to pan.'),
+          f.summary ? paragraphs(f.summary, 'detail') : null,
+          linkList(f.links, editor),
+          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there. Two fingers pan, pinch zooms.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
                 return h('li', { key: i }, t);
@@ -1112,9 +1343,16 @@
           className: 'minimap-toggle',
           onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
         }, showMap ? 'Hide minimap' : 'Show minimap'),
-        Object.keys(moved).length
-          ? h('button', { onClick: function () { setMoved({}); } }, 'Reset layout')
-          : null,
+        // Only worth asking where files should open when there are files.
+        doc.hasFileLinks ? h('select', {
+          className: 'opener', value: editor, 'aria-label': 'Open files in',
+          onChange: function (ev) {
+            setEditor(ev.target.value);
+            try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
+          }
+        }, Object.keys(OPENERS).map(function (key) {
+          return h('option', { key: key, value: key }, OPENERS[key].label);
+        })) : null,
         h('div', { className: 'export', ref: exportRef },
           h('button', {
             'aria-haspopup': 'menu', 'aria-expanded': showExport,
@@ -1122,7 +1360,13 @@
           }, 'Export ↓'),
           showExport ? h('div', { className: 'export-menu', role: 'menu' },
             h('button', { role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
-            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG')
+            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG'),
+            h('label', null,
+              h('input', {
+                type: 'checkbox', checked: exportBg,
+                onChange: function (ev) { setExportBg(ev.target.checked); }
+              }),
+              'Background')
           ) : null
         ),
         f.problems.length
@@ -1136,19 +1380,18 @@
             }, 'Trace valid')
       ),
       h('main', { className: sel ? 'has-selection' : '' },
-        h('div', { className: 'canvas' },
+        h('div', { className: 'canvas canvas-' + canvasTheme },
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
-            onNodesChange: onNodesChange,
-            // A click that wobbles still selects; only a real drag moves a node.
-            nodeDragThreshold: 4,
+            nodesDraggable: false,
             onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
             onPaneClick: function () { setSel(null); },
             fitView: true, fitViewOptions: FIT,
-            // Held, Shift turns wheel/two-finger scroll into a pan instead of a
-            // zoom. Shift is also React Flow's box-select key, and box-select
-            // does nothing here, so that binding is dropped rather than shared.
-            panActivationKeyCode: 'Shift', selectionKeyCode: null,
+            // Two fingers pan and pinch zooms, the trackpad gestures a canvas
+            // is expected to answer. Pinch arrives as ctrl + wheel, which React
+            // Flow keeps for zoom once the plain wheel is spent on panning.
+            // Shift is its box-select key and box-select does nothing here.
+            panOnScroll: true, selectionKeyCode: null,
             proOptions: { hideAttribution: true },
             minZoom: 0.1
           },
@@ -1156,21 +1399,29 @@
             showMap ? h(RF.MiniMap, {
               pannable: true, zoomable: true, nodeColor: nodeColorOf
             }) : null,
-            h(RF.Panel, {
-              position: 'top-right', className: 'edge-legend',
-              role: 'list', 'aria-label': 'Edge legend'
-            }, Object.keys(EDGE_KINDS).map(function (key) {
-              var item = EDGE_KINDS[key];
-              return h('span', { className: 'legend-item', role: 'listitem', key: key },
-                h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
-                  h('line', {
-                    x1: 1, y1: 4, x2: 25, y2: 4, strokeWidth: 2,
-                    stroke: item.color || MUTED, strokeDasharray: item.dash
-                  })
-                ),
-                item.label
-              );
-            }))
+            h(RF.Panel, { position: 'top-right', className: 'canvas-tools' },
+              h('div', {
+                className: 'edge-legend', role: 'list', 'aria-label': 'Edge legend'
+              }, Object.keys(EDGE_KINDS).map(function (key) {
+                var item = EDGE_KINDS[key];
+                return h('span', { className: 'legend-item', role: 'listitem', key: key },
+                  h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
+                    h('line', {
+                      x1: 1, y1: 4, x2: 25, y2: 4, strokeWidth: 2,
+                      stroke: item.color || MUTED, strokeDasharray: item.dash
+                    })
+                  ),
+                  item.label
+                );
+              })),
+              h('button', {
+                className: 'canvas-theme',
+                title: 'Switch the diagram to ' + (canvasTheme === 'dark' ? 'light' : 'dark'),
+                onClick: function () {
+                  setCanvasTheme(canvasTheme === 'dark' ? 'light' : 'dark');
+                }
+              }, canvasTheme === 'dark' ? 'Light' : 'Dark')
+            )
           )
         ),
         h('aside', null,
