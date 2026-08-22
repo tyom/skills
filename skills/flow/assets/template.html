@@ -14,17 +14,9 @@
     --success: #059669; --join: var(--fork);
     --ok: var(--success); --bad: var(--end);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
-      --line: #2a3038; --accent: #60a5fa;
-      --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
-      --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
-      --success: #34d399;
-    }
-  }
-  /* The same palette again, as a class: the canvas can be dark while the page
-     around it is light, and an exported sheet carries the class with it. */
+  /* The dark palette, written once. The page wears this class to follow the
+     system; the canvas wears it on its own so it can be dark while the page is
+     light, and an exported sheet carries it with it. */
   .canvas-dark {
     --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
     --line: #2a3038; --accent: #60a5fa;
@@ -67,6 +59,20 @@
     outline: 3px solid var(--accent); outline-offset: 2px;
   }
   .export { position: relative; display: flex; align-self: center; }
+  header .opener {
+    align-self: center; font: inherit; font-size: 12px; padding: 4px 6px;
+    color: var(--ink); background: var(--bg); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  header .opener:hover { border-color: var(--accent); }
+  /* Copying is the opener of last resort, so it wears the link it replaces. */
+  .as-link {
+    padding: 0; font: inherit; color: var(--accent); background: none;
+    border: 0; cursor: pointer; text-align: left;
+  }
+  .as-link:hover { text-decoration: underline; }
+  aside .steps .as-link { color: var(--muted); }
+  aside .steps .as-link:hover { color: var(--accent); }
   .export-menu {
     position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
     min-width: 142px; padding: 4px; background: var(--panel);
@@ -330,6 +336,21 @@
     .node, .react-flow__edge { transition: none; }
   }
 </style>
+<!-- The page follows the system by wearing the canvas classes, so the dark
+     palette lives in one place. In the head, because the body paints its
+     background before the runtime below has finished parsing. -->
+<script>
+(function () {
+  var dark = matchMedia('(prefers-color-scheme: dark)');
+  function apply() {
+    var root = document.documentElement.classList;
+    root.toggle('canvas-dark', dark.matches);
+    root.toggle('canvas-light', !dark.matches);
+  }
+  apply();
+  dark.addEventListener('change', apply);
+})();
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -631,21 +652,100 @@
     });
   }
 
+  // Every opener the page can build, since the reader may not use the editor the
+  // trace was built on. JetBrains IDEs take a project-relative path and route
+  // through the jetbrains: handler; the rest take the absolute path.
+  var OPENERS = {
+    vscode: { label: 'VS Code', url: fileScheme('vscode') },
+    cursor: { label: 'Cursor', url: fileScheme('cursor') },
+    windsurf: { label: 'Windsurf', url: fileScheme('windsurf') },
+    zed: { label: 'Zed', url: fileScheme('zed') },
+    sublime: { label: 'Sublime Text', url: urlQuery('subl') },
+    textmate: { label: 'TextMate', url: urlQuery('txmt') },
+    webstorm: { label: 'WebStorm', url: jetbrains('webstorm') },
+    idea: { label: 'IntelliJ IDEA', url: jetbrains('idea') },
+    copy: { label: 'Copy path:line', url: null }
+  };
+
+  function fileScheme(scheme) {
+    return function (l) { return scheme + '://file' + l.abs + ':' + l.line; };
+  }
+
+  function urlQuery(scheme) {
+    return function (l) { return scheme + '://open?url=file://' + l.abs + '&line=' + l.line; };
+  }
+
+  function jetbrains(tool) {
+    return function (l) {
+      return 'jetbrains://' + tool + '/navigate/reference?project=' +
+        encodeURIComponent(doc.project || '') + '&path=' +
+        encodeURIComponent(l.path + ':' + l.line);
+    };
+  }
+
+  var EDITOR_KEY = 'flow:editor';
+  function readEditor() {
+    try {
+      var saved = localStorage.getItem(EDITOR_KEY);
+      if (saved && OPENERS[saved]) return saved;
+    } catch (e) { /* no store */ }
+    return OPENERS[doc.editor] ? doc.editor : 'vscode';
+  }
+
+  function copyText(text) {
+    function fallback() {
+      var box = document.createElement('textarea');
+      box.value = text; document.body.appendChild(box); box.select();
+      try { document.execCommand('copy'); } finally { box.remove(); }
+    }
+    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(fallback);
+    else fallback();
+  }
+
+  function CopyRef(props) {
+    var state = useState(false), done = state[0], setDone = state[1];
+    return h('button', {
+      className: props.className, title: 'Copy ' + props.copy,
+      onClick: function () {
+        copyText(props.copy); setDone(true);
+        setTimeout(function () { setDone(false); }, 1200);
+      }
+    }, done ? 'copied' : props.label);
+  }
+
+  // One renderer for every path:line on the page. The chosen opener decides
+  // whether that is a link into an editor or something to copy.
+  function fileLink(link, label, className, editor) {
+    var opener = OPENERS[editor] || OPENERS.vscode;
+    if (!opener.url) {
+      return h(CopyRef, {
+        className: (className ? className + ' ' : '') + 'as-link',
+        label: label, copy: link.file
+      });
+    }
+    return h('a', { className: className, href: opener.url(link) }, label);
+  }
+
   // An http link leaves for the browser; an editor scheme has to stay in place,
   // since a new tab for it would be left blank.
-  function linkList(list) {
+  function linkList(list, editor) {
     if (!list || !list.length) return null;
     return h(React.Fragment, null,
       h('p', { className: 'trail-label' }, 'References'),
       h('ul', { className: 'links' }, list.map(function (l, i) {
+        if (l.abs) {
+          return h('li', { key: i },
+            fileLink(l, l.label, null, editor),
+            l.file !== l.label ? h('span', { className: 'ref' }, l.file) : null
+          );
+        }
         var web = /^https?:/i.test(l.url);
         return h('li', { key: i },
           h('a', {
             href: l.url,
             target: web ? '_blank' : null,
             rel: web ? 'noreferrer' : null
-          }, l.label),
-          l.file && l.file !== l.label ? h('span', { className: 'ref' }, l.file) : null
+          }, l.label)
         );
       }))
     );
@@ -913,6 +1013,7 @@
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
     var bgState = useState(true), exportBg = bgState[0], setExportBg = bgState[1];
+    var editorState = useState(readEditor), editor = editorState[0], setEditor = editorState[1];
     var themeState = useState(function () {
       return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
@@ -1078,8 +1179,8 @@
               labelOf(f, id),
               branch ? h('span', { className: 'branch' }, '→ ' + branch) : null
             ),
-            n.refUrl
-              ? h('a', { className: 'ref', href: n.refUrl }, n.ref)
+            n.refLink
+              ? fileLink(n.refLink, n.ref, 'ref', editor)
               : (n.ref ? h('span', { className: 'ref' }, n.ref) : null)
           );
         }))
@@ -1097,15 +1198,15 @@
             tag(KIND_COLOR[kind], kind),
             n.ref
               ? h('code', { key: 'ref' },
-                  // Only a ref with a file behind it earns a link; the rest is
-                  // still worth showing.
-                  n.refUrl ? h('a', { href: n.refUrl }, n.ref) : n.ref)
+                  // Only a ref with a file behind it opens; the rest is still
+                  // worth showing.
+                  n.refLink ? fileLink(n.refLink, n.ref, null, editor) : n.ref)
               : null
           ]),
           h('div', { className: 'panel-body' },
             n.note ? h('p', { className: 'note' }, n.note) : null,
             paragraphs(n.detail || 'No detail recorded for this step.', 'detail'),
-            linkList(n.links),
+            linkList(n.links, editor),
             trail(1)
           )
         );
@@ -1124,7 +1225,7 @@
             e.detail
               ? paragraphs(e.detail, 'detail')
               : h('p', { className: 'hint' }, 'No detail recorded for this edge.'),
-            linkList(e.links),
+            linkList(e.links, editor),
             trail(0)
           )
         );
@@ -1140,7 +1241,7 @@
         ]),
         h('div', { className: 'panel-body' },
           f.summary ? paragraphs(f.summary, 'detail') : null,
-          linkList(f.links),
+          linkList(f.links, editor),
           h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there. Hold Shift while scrolling to pan.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
@@ -1171,6 +1272,16 @@
           className: 'minimap-toggle',
           onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
         }, showMap ? 'Hide minimap' : 'Show minimap'),
+        // Only worth asking where files should open when there are files.
+        doc.hasFileLinks ? h('select', {
+          className: 'opener', value: editor, 'aria-label': 'Open files in',
+          onChange: function (ev) {
+            setEditor(ev.target.value);
+            try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
+          }
+        }, Object.keys(OPENERS).map(function (key) {
+          return h('option', { key: key, value: key }, OPENERS[key].label);
+        })) : null,
         h('div', { className: 'export', ref: exportRef },
           h('button', {
             'aria-haspopup': 'menu', 'aria-expanded': showExport,

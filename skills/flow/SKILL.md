@@ -65,7 +65,7 @@ A flow, a node, and an edge may each carry `links`, the references shown under i
 - `{ "label": "RFC 9110", "url": "https://..." }` for anything on the web.
 - `{ "label": "state_of()", "path": "link-skills.sh", "line": 18 }` for a file in the source root. `label` is optional and `line` may be omitted. The build turns it into an editor URL, so it opens where the code is read; the paths are checked like refs.
 
-The build works out which editor to open them in: the IDE connected to the source root, then the terminal it is running in, then VS Code. Set the top-level `editor` field to override it — `vscode`, `cursor`, `windsurf`, `zed`, a JetBrains IDE (`idea`, `webstorm`, `pycharm`, `phpstorm`, `goland`, `rubymine`, `clion`, `rider`), or a template of your own containing `{path}` and `{line}`. The build output names the editor it chose.
+The page carries every opener and the reader picks one from the header, so a file link works whatever they use. The build only chooses which one it starts on: the terminal it is running in, otherwise VS Code. Set the top-level `editor` field to name that starting choice — `vscode`, `cursor`, `windsurf`, `zed`, `sublime`, `textmate`, `webstorm`, `idea`, or `copy` for a page that copies `path:line` instead of opening it.
 
 Nodes:
 

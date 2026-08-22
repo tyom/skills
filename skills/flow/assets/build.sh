@@ -56,56 +56,23 @@ NODE_KINDS = {"start", "step", "decision", "io", "store", "end", "success",
               "fork", "join", "state"}
 EDGE_KINDS = {"async", "error", "retry"}
 
-# A browser cannot ask the OS for "the" editor, so a file link is written as the
-# URL scheme of one. Every editor here registers its own; anything else can be
-# given as a template.
-EDITORS = {
-    "vscode": "vscode://file{path}:{line}",
-    "cursor": "cursor://file{path}:{line}",
-    "windsurf": "windsurf://file{path}:{line}",
-    "zed": "zed://file{path}:{line}",
-}
-EDITORS.update({
-    name: name + "://open?file={path}&line={line}"
-    for name in ("idea", "webstorm", "pycharm", "phpstorm", "goland", "rubymine",
-                 "clion", "rider")
-})
-# What an editor calls itself, where that is not already the scheme it registers.
-IDE_NAMES = {"visual studio code": "vscode", "vs code": "vscode",
-             "intellij idea": "idea", "android studio": "idea"}
+# A browser cannot ask the OS for "the" editor, and a reader may not use the one
+# the trace was built on, so the page holds every opener and this is only the one
+# it starts on. The names match the openers in template.html.
+EDITORS = ("vscode", "cursor", "windsurf", "zed", "sublime", "textmate",
+           "webstorm", "idea", "copy")
 
 
-def scheme_for(name):
-    key = " ".join(str(name).lower().split())
-    return IDE_NAMES.get(key) or (key.replace(" ", "") if key.replace(" ", "") in EDITORS else None)
-
-
-def detect_editor(root):
-    """Claude Code writes a lock file for each IDE it is connected to, naming the
-    IDE and the folders it has open. The one holding the source root is the
-    editor these links should open in; the terminal is the fallback."""
-    fallback = None
-    locks = sorted((pathlib.Path.home() / ".claude" / "ide").glob("*.lock"),
-                   key=lambda f: f.stat().st_mtime, reverse=True)
-    for lock in locks:
-        try:
-            info = json.loads(lock.read_text())
-        except (OSError, ValueError):
-            continue
-        name = scheme_for(info.get("ideName", ""))
-        if not name:
-            continue
-        for folder in info.get("workspaceFolders") or []:
-            if root == pathlib.Path(folder) or root.is_relative_to(folder):
-                return name
-        fallback = fallback or name
+def detect_editor():
+    """The terminal this runs in is the one guess worth making. Everything else
+    is the reader's pick in the header, which their browser remembers."""
     env = os.environ
     if env.get("ZED_TERM"):
         return "zed"
     if env.get("TERM_PROGRAM") == "vscode":
         bundle = env.get("__CFBundleIdentifier", "").lower()
         return next((n for n in ("cursor", "windsurf") if n in bundle), "vscode")
-    return fallback or "vscode"
+    return "vscode"
 
 
 file_links = []
@@ -133,10 +100,11 @@ def resolve_links(owner, where, root, warnings):
             warnings.append(("link file missing", f"{where}: {path}"))
         elif line and int(line) > line_count(f):
             warnings.append(("link line past end", f"{where}: {path}:{line}"))
-        link["url"] = LINK_TEMPLATE.format(path=f, line=line or 1)
-        file_links.append(link["url"])
+        link["abs"] = str(f)
+        link["line"] = int(line) if line else 1
         link["file"] = f"{path}:{line}" if line else path
         link.setdefault("label", link["file"])
+        file_links.append(link["file"])
 
 
 @functools.lru_cache(maxsize=None)
@@ -178,8 +146,9 @@ def check(flow, root):
                 warnings.append(("ref line past end", f"{nid}: {ref}"))
             # The panel shows the ref; with a file behind it, it also opens it.
             if f.is_file():
-                node["refUrl"] = LINK_TEMPLATE.format(path=f, line=line or 1)
-                file_links.append(node["refUrl"])
+                node["refLink"] = {"path": path, "abs": str(f),
+                                   "line": int(line) if line else 1, "file": ref}
+                file_links.append(ref)
         resolve_links(node, nid, root, warnings)
         kind = node.get("kind", "step")
         if kind not in NODE_KINDS:
@@ -235,11 +204,9 @@ def check(flow, root):
 # Checked before the page is written, so each flow can carry its own problems
 # and the badge on the page says exactly what this output says.
 root = pathlib.Path(os.environ["ROOT"]).resolve()
-editor = data.get("editor") or detect_editor(root)
-LINK_TEMPLATE = EDITORS.get(editor, editor)
-if "{path}" not in LINK_TEMPLATE:
-    sys.exit(f"build.sh: unknown editor {editor!r}: use one of "
-             f"{', '.join(EDITORS)}, or a template containing {{path}}")
+editor = data.get("editor") or detect_editor()
+if editor not in EDITORS:
+    sys.exit(f"build.sh: unknown editor {editor!r}: use one of {', '.join(EDITORS)}")
 
 reports = [check(flow, root) for flow in flows]
 for flow, (_, bad) in zip(flows, reports):
@@ -250,7 +217,9 @@ for marker, part in (
     ("/*VENDOR_CSS*/", (d / "vendor.css").read_text()),
     ("/*VENDOR_JS*/", (d / "vendor.js").read_text()),
     # </script> inside a string would close the data block early.
-    ("__FLOW_DATA__", json.dumps({"title": data.get("title", ""), "flows": flows})
+    ("__FLOW_DATA__", json.dumps({"title": data.get("title", ""), "editor": editor,
+                                  "project": root.name, "hasFileLinks": bool(file_links),
+                                  "flows": flows})
                           .replace("</", "<\\/")),
 ):
     if marker not in page:
@@ -263,7 +232,7 @@ out = pathlib.Path(os.environ["OUT"])
 out.write_text(page)
 n = sum(len(f["nodes"]) for f in flows)
 e = sum(len(f["edges"]) for f in flows)
-opens = f", {len(file_links)} file link(s) opening in {editor}" if file_links else ""
+opens = f", {len(file_links)} file link(s), {editor} first" if file_links else ""
 print(f"{out}  ({len(page) // 1024}KB, {len(flows)} flow(s), {n} nodes, {e} edges{opens})")
 
 for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
