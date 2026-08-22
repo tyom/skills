@@ -6,7 +6,7 @@
 <title>Flow</title>
 <style>/*VENDOR_CSS*/</style>
 <style>
-  :root {
+  :root, .canvas-light {
     --bg: #f6f7f9; --panel: #fff; --ink: #14171a; --muted: #6b7280;
     --line: #e3e6ea; --accent: #2563eb;
     --start: #059669; --step: #64748b; --decision: #d97706;
@@ -22,6 +22,15 @@
       --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
       --success: #34d399;
     }
+  }
+  /* The same palette again, as a class: the canvas can be dark while the page
+     around it is light, and an exported sheet carries the class with it. */
+  .canvas-dark {
+    --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
+    --line: #2a3038; --accent: #60a5fa;
+    --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
+    --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
+    --success: #34d399;
   }
   * { box-sizing: border-box; }
   html, body, #root { height: 100%; margin: 0; }
@@ -69,6 +78,10 @@
     background: none; border: 0;
   }
   header .export-menu button:hover { background: var(--bg); }
+  .export-menu label {
+    display: flex; align-items: center; gap: 7px; padding: 6px 8px;
+    margin-top: 4px; border-top: 1px solid var(--line); cursor: pointer;
+  }
   /* A tab is navigation, not an option: no box, and its indicator sits down on
      the header's own bottom rule so the strip reads as the edge of the canvas. */
   header .tab {
@@ -87,14 +100,23 @@
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
   .badge {
-    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    font-size: 12px; padding: 2px 9px; border-radius: 999px;
     border: 1px solid currentColor; cursor: help; align-self: center;
   }
-  .badge.ok { color: var(--ok); padding: 3px 7px; }
+  .badge.ok { color: var(--ok); padding: 2px 7px; }
   .badge.bad { color: var(--bad); }
 
   main { flex: 1; display: flex; min-height: 0; }
-  .canvas { flex: 1; min-width: 0; }
+  /* Both, not just the background: colour inherits as a resolved value, so
+     text under a flipped canvas has to pick up the palette here. */
+  .canvas { flex: 1; min-width: 0; background: var(--bg); color: var(--ink); }
+  .canvas-tools { display: flex; align-items: stretch; gap: 6px; }
+  .canvas-theme {
+    padding: 7px 9px; color: var(--muted); background: var(--panel);
+    border: 0; border-radius: 6px; font: inherit; font-size: 11px;
+    line-height: 1; cursor: pointer;
+  }
+  .canvas-theme:hover { color: var(--ink); }
 
   aside {
     width: clamp(272px, 26vw, 348px); flex: none; display: flex; flex-direction: column; min-height: 0;
@@ -393,19 +415,21 @@
     return box;
   }
 
-  function svgExport(nodes, title) {
+  function svgExport(nodes, title, withBackground) {
     var source = document.querySelector('.canvas .react-flow');
     if (!source) throw new Error('Flow canvas not found');
     var clone = source.cloneNode(true), bounds = exportBounds(nodes, source), pad = 32;
     var graphWidth = Math.ceil(bounds.x2 - bounds.x1 + pad * 2);
     var graphHeight = Math.ceil(bounds.y2 - bounds.y1 + pad * 2);
     var width = Math.max(640, graphWidth), headHeight = 64, height = graphHeight + headHeight;
-    var theme = getComputedStyle(document.documentElement);
+    var canvas = source.closest('.canvas');
+    var theme = getComputedStyle(canvas);
     var bodyStyle = getComputedStyle(document.body);
     var sheet = document.createElement('div'), head = document.createElement('div');
     var heading = document.createElement('div'), legend = source.querySelector('.edge-legend').cloneNode(true);
+    sheet.className = canvas.classList.contains('canvas-dark') ? 'canvas-dark' : 'canvas-light';
     sheet.style.width = width + 'px'; sheet.style.height = height + 'px';
-    sheet.style.background = theme.getPropertyValue('--bg');
+    if (withBackground) sheet.style.background = theme.getPropertyValue('--bg');
     sheet.style.color = theme.getPropertyValue('--ink');
     sheet.style.fontFamily = bodyStyle.fontFamily;
     sheet.style.fontSize = bodyStyle.fontSize;
@@ -421,7 +445,7 @@
     legend.style.display = 'flex';
     head.appendChild(heading); head.appendChild(legend);
     clone.style.width = width + 'px'; clone.style.height = graphHeight + 'px';
-    clone.style.background = theme.getPropertyValue('--bg');
+    if (withBackground) clone.style.background = theme.getPropertyValue('--bg');
     clone.style.color = theme.getPropertyValue('--ink');
     clone.style.fontFamily = bodyStyle.fontFamily;
     clone.style.fontSize = bodyStyle.fontSize;
@@ -447,8 +471,8 @@
     };
   }
 
-  function exportFlow(nodes, title, format) {
-    var image = svgExport(nodes, title);
+  function exportFlow(nodes, title, format, withBackground) {
+    var image = svgExport(nodes, title, withBackground);
     if (format === 'svg') {
       download(image.blob, fileName(title, 'svg'));
       return Promise.resolve();
@@ -837,6 +861,11 @@
     var mapState = useState(function () { return readToggle(MAP_KEY); });
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
+    var bgState = useState(true), exportBg = bgState[0], setExportBg = bgState[1];
+    var themeState = useState(function () {
+      return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    });
+    var canvasTheme = themeState[0], setCanvasTheme = themeState[1];
     var exportRef = useRef(null);
     var f = flows[tab];
 
@@ -967,7 +996,7 @@
       // svgExport throws synchronously when the canvas is missing, so the call
       // goes through a promise to keep both failures on one handler.
       Promise.resolve().then(function () {
-        return exportFlow(nodes, f.title || doc.title || 'Flow', format);
+        return exportFlow(nodes, f.title || doc.title || 'Flow', format, exportBg);
       }).catch(function (error) {
         console.error(error); alert('Could not export this flow.');
       });
@@ -1091,7 +1120,13 @@
           }, 'Export ↓'),
           showExport ? h('div', { className: 'export-menu', role: 'menu' },
             h('button', { role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
-            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG')
+            h('button', { role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG'),
+            h('label', null,
+              h('input', {
+                type: 'checkbox', checked: exportBg,
+                onChange: function (ev) { setExportBg(ev.target.checked); }
+              }),
+              'Background')
           ) : null
         ),
         f.problems.length
@@ -1105,7 +1140,7 @@
             }, 'Trace valid')
       ),
       h('main', { className: sel ? 'has-selection' : '' },
-        h('div', { className: 'canvas' },
+        h('div', { className: 'canvas canvas-' + canvasTheme },
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
             nodesDraggable: false,
@@ -1123,21 +1158,29 @@
             showMap ? h(RF.MiniMap, {
               pannable: true, zoomable: true, nodeColor: nodeColorOf
             }) : null,
-            h(RF.Panel, {
-              position: 'top-right', className: 'edge-legend',
-              role: 'list', 'aria-label': 'Edge legend'
-            }, Object.keys(EDGE_KINDS).map(function (key) {
-              var item = EDGE_KINDS[key];
-              return h('span', { className: 'legend-item', role: 'listitem', key: key },
-                h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
-                  h('line', {
-                    x1: 1, y1: 4, x2: 25, y2: 4, strokeWidth: 2,
-                    stroke: item.color || MUTED, strokeDasharray: item.dash
-                  })
-                ),
-                item.label
-              );
-            }))
+            h(RF.Panel, { position: 'top-right', className: 'canvas-tools' },
+              h('div', {
+                className: 'edge-legend', role: 'list', 'aria-label': 'Edge legend'
+              }, Object.keys(EDGE_KINDS).map(function (key) {
+                var item = EDGE_KINDS[key];
+                return h('span', { className: 'legend-item', role: 'listitem', key: key },
+                  h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
+                    h('line', {
+                      x1: 1, y1: 4, x2: 25, y2: 4, strokeWidth: 2,
+                      stroke: item.color || MUTED, strokeDasharray: item.dash
+                    })
+                  ),
+                  item.label
+                );
+              })),
+              h('button', {
+                className: 'canvas-theme',
+                title: 'Switch the diagram to ' + (canvasTheme === 'dark' ? 'light' : 'dark'),
+                onClick: function () {
+                  setCanvasTheme(canvasTheme === 'dark' ? 'light' : 'dark');
+                }
+              }, canvasTheme === 'dark' ? 'Light' : 'Dark')
+            )
           )
         ),
         h('aside', null,
