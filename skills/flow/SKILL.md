@@ -83,7 +83,7 @@ Edges:
 
 - `from` and `to`: node ids.
 - `label`: the outcome of every `decision`, or the event in a state machine.
-- `kind`: optional `async`, `error`, or `retry`.
+- `kind`: optional `async`, `error`, or `retry`. A loop back to try again needs the `kind`, not just the word as a `label`. The panel walks backwards to find what leads to a step, and only `retry` stops that walk, so an untagged loop lights everything it passes on the way round.
 - `detail`: optional evidence-backed explanation shown after a click.
 - `links`: optional references, as above.
 

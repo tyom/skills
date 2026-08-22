@@ -224,7 +224,13 @@
   }
   .node:active { cursor: grabbing; }
   .node .body { padding: 8px 12px; }
-  .node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  /* A gap between the node and its ring, because --accent is also a kind colour
+     — an `io` node is the same blue, and a plain thicker border read as one
+     that had been selected. A halo is a shape no kind can imitate. */
+  .node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
   .node.dim { opacity: .22; }
   .react-flow__edge { transition: opacity .15s; }
   .react-flow__edge.dim { opacity: .1; }
@@ -287,7 +293,9 @@
   /* A bar is pinned to its height, so only the label fits. The note and the ref
      are still there — they read in the panel. */
   .node-fork .ref, .node-join .ref, .node-fork .note, .node-join .note { display: none; }
-  .node-fork.selected, .node-join.selected { box-shadow: 0 0 0 2px var(--accent); }
+  .node-fork.selected, .node-join.selected {
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
 
   /* Labels are rendered into React Flow's label layer, above every path, so a
      line crossing the band cannot strike through the text that names it. */
@@ -599,22 +607,41 @@
   function unique(a) { return Array.from(new Set(a)); }
 
   // --- what leads here ------------------------------------------------------
-  // Everything on a forward path into nodeId, by hop count. An edge kind that
-  // does not carry the flow forward is not crossed; see EDGE_KINDS.
+  // One route in, not every route. A flow that loops has ancestors on all sides
+  // of a node — after an aspect change the crop editor comes back round into the
+  // step that computes the frame — and lighting the whole ancestor set paints
+  // the loop as though it led here. So the walk back records the edge each
+  // ancestor was found through, then follows those edges forward again from a
+  // single origin. Breadth-first, so the route it keeps is the shortest one. An
+  // edge kind that does not carry the flow forward is not crossed; see
+  // EDGE_KINDS.
   function upstream(f, nodeId) {
-    var edges = Object.create(null), dist = Object.create(null);
-    var queue = [nodeId];
-    dist[nodeId] = 0;
+    var seen = Object.create(null), via = Object.create(null);
+    var queue = [nodeId], far = nodeId, start = null;
+    seen[nodeId] = true;
     while (queue.length) {
       var cur = queue.shift();
       (f.incoming[cur] || []).forEach(function (e) {
-        if (edgeKind(e.kind).progress === false) return;
-        edges[e.id] = true;
-        if (dist[e.from] === undefined) {
-          dist[e.from] = dist[cur] + 1;
-          queue.push(e.from);
-        }
+        if (edgeKind(e.kind).progress === false || seen[e.from]) return;
+        seen[e.from] = true;
+        via[e.from] = e;
+        queue.push(e.from);
+        far = e.from;
+        // The nearest start is where a reader would begin, so it wins over the
+        // furthest node, which in a loop is only the long way round.
+        if (!start && kindOf((f.nodeById[e.from] || {}).kind) === 'start') start = e.from;
       });
+    }
+
+    // via[x] is the edge out of x towards nodeId, so following it always closes
+    // the distance and the walk forward cannot circle.
+    var edges = Object.create(null), dist = Object.create(null), hops = 0;
+    var origin = start || far, at;
+    for (at = origin; at !== nodeId; at = via[at].to) hops++;
+    for (at = origin; ; at = via[at].to) {
+      dist[at] = hops--;
+      if (at === nodeId) break;
+      edges[via[at].id] = true;
     }
     return { edges: edges, dist: dist };
   }
@@ -1049,14 +1076,47 @@
     // Selecting anything asks the same question: what leads here?
     var lit = useMemo(function () {
       if (!sel) return null;
-      if (sel.kind === 'node') return upstream(f, sel.id);
-      var e = f.edgeById[sel.id];
-      var up = upstream(f, e.from);
-      up.edges[e.id] = true;
-      // Lit, but not a step that leads here: it is where this edge arrives.
-      if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
+      var at = placedNodes.reduce(function (m, n) {
+        m[n.id] = dir === 'TB' ? n.position.y : n.position.x;
+        return m;
+      }, Object.create(null));
+      var id = sel.kind === 'node' ? sel.id : f.edgeById[sel.id].from;
+      var up = upstream(f, id);
+
+      // A selected node has a shape: the route is one way in and it may have
+      // others, which light too, or a step with two parents looks as though it
+      // had one. Only the ones the layout draws arriving, though — an edge from
+      // a node placed further down is the loop coming back, and lighting that
+      // reads as the selection pointing at something. Lit at -1, so they stay
+      // out of the trail, which is still a single path.
+      //
+      // A selected edge has no such shape. It asks what leads to this one edge,
+      // so the other ways into the node it leaves are no part of the answer.
+      if (sel.kind === 'node') {
+        (f.incoming[id] || []).forEach(function (e) {
+          if (at[e.from] < at[e.to] && up.dist[e.from] === undefined) up.dist[e.from] = -1;
+        });
+      }
+      // Then every edge between two lit nodes, in either direction. Which nodes
+      // light is already settled above, so this only draws what runs between
+      // them: an added parent hangs off the route instead of floating, a second
+      // edge between the same pair lights beside the first, and the loop home
+      // lights when both its ends are on show. A dim node keeps its edges dim,
+      // which is what holds the loop back in the first place.
+      f.edgeItems.forEach(function (e) {
+        if (up.dist[e.from] !== undefined && up.dist[e.to] !== undefined) {
+          up.edges[e.id] = true;
+        }
+      });
+
+      if (sel.kind === 'edge') {
+        var e = f.edgeById[sel.id];
+        up.edges[e.id] = true;
+        // Lit, but not a step that leads here: it is where this edge arrives.
+        if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
+      }
       return up;
-    }, [f, sel]);
+    }, [f, sel, placedNodes, dir]);
 
     var nodes = useMemo(function () {
       return placedNodes.map(function (n) {
@@ -1122,15 +1182,21 @@
       if (!lit) return baseEdges;
       return baseEdges.map(function (b) {
         var on = !!lit.edges[b.id];
+        // A node wears a ring when it is the selection; an edge had nothing, so
+        // the one that was clicked looked no different from the route drawn to
+        // reach it. Weight says which is which.
+        var picked = sel.kind === 'edge' && sel.id === b.id;
         var stroke = b.color || (on ? ACCENT : MUTED);
         return Object.assign({}, b, {
           data: Object.assign({}, b.data, { dim: !on }),
           className: on ? undefined : 'dim',
-          style: Object.assign({}, b.style, { stroke: stroke, strokeWidth: on ? 2 : 1.5 }),
+          style: Object.assign({}, b.style, {
+            stroke: stroke, strokeWidth: picked ? 3.5 : (on ? 2 : 1.5)
+          }),
           markerEnd: { type: RF.MarkerType.ArrowClosed, color: stroke }
         });
       });
-    }, [baseEdges, lit]);
+    }, [baseEdges, lit, sel]);
 
     var onNodeClick = useCallback(function (_, node) {
       setSel({ kind: 'node', id: node.id });
