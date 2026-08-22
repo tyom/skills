@@ -224,7 +224,7 @@ page = (d / "template.html").read_text()
 for marker, part in (
     # The title is written into the head, not set by the script, so the file
     # names itself in a listing or a bookmark that never runs it.
-    ("__TITLE__", html.escape(data.get("title") or "Flow")),
+    ("__TITLE__", html.escape(data.get("title") or flows[0].get("title") or "Flow")),
     ("/*VENDOR_CSS*/", (d / "vendor.css").read_text()),
     ("/*VENDOR_JS*/", (d / "vendor.js").read_text()),
     # </script> inside a string would close the data block early.
