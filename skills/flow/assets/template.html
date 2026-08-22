@@ -81,8 +81,8 @@
   .edge-legend {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
     max-width: calc(100% - 30px); padding: 7px 9px;
-    color: var(--muted); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 6px; font-size: 11px; white-space: nowrap; pointer-events: none;
+    color: var(--muted); background: var(--panel); border-radius: 6px;
+    font-size: 11px; white-space: nowrap; pointer-events: none;
   }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
@@ -838,9 +838,6 @@
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
     var exportRef = useRef(null);
-    // Where the reader has dragged things. Empty means dagre's layout, untouched.
-    var movedState = useState({}), moved = movedState[0], setMoved = movedState[1];
-
     var f = flows[tab];
 
     useEffect(function () {
@@ -883,42 +880,17 @@
     var nodes = useMemo(function () {
       return placedNodes.map(function (n) {
         return Object.assign({}, n, {
-          position: moved[n.id] || n.position,
           data: Object.assign({}, n.data, {
             selected: !!sel && sel.kind === 'node' && sel.id === n.id,
             dim: !!lit && lit.dist[n.id] === undefined
           })
         });
       });
-    }, [placedNodes, sel, lit, moved]);
+    }, [placedNodes, sel, lit]);
 
-    // Relayout moves every node, so the old viewport frames nothing — and every
-    // hand-placed position belonged to the layout that just went away.
+    // Relayout moves every node, so the old viewport frames nothing.
     var fitView = RF.useReactFlow().fitView;
-    useEffect(function () {
-      setMoved(function (prev) { return Object.keys(prev).length ? {} : prev; });
-      fitView(FIT);
-    }, [f, dir, fitView]);
-
-    var basePos = useMemo(function () {
-      return placedNodes.reduce(function (m, n) { m[n.id] = n.position; return m; }, Object.create(null));
-    }, [placedNodes]);
-
-    var onNodesChange = useCallback(function (changes) {
-      var dragged = null;
-      changes.forEach(function (c) {
-        if (c.type !== 'position' || !c.position) return;
-        // Mount echoes the layout position back; a node left where dagre put it
-        // is not something to offer a reset from.
-        var base = basePos[c.id];
-        if (base && c.position.x === base.x && c.position.y === base.y) return;
-        dragged = dragged || {};
-        dragged[c.id] = c.position;
-      });
-      if (dragged) {
-        setMoved(function (prev) { return Object.assign({}, prev, dragged); });
-      }
-    }, [basePos]);
+    useEffect(function () { fitView(FIT); }, [f, dir, fitView]);
 
     var selectEdge = useCallback(function (id) {
       setSel({ kind: 'edge', id: id });
@@ -1112,9 +1084,6 @@
           className: 'minimap-toggle',
           onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
         }, showMap ? 'Hide minimap' : 'Show minimap'),
-        Object.keys(moved).length
-          ? h('button', { onClick: function () { setMoved({}); } }, 'Reset layout')
-          : null,
         h('div', { className: 'export', ref: exportRef },
           h('button', {
             'aria-haspopup': 'menu', 'aria-expanded': showExport,
@@ -1139,9 +1108,7 @@
         h('div', { className: 'canvas' },
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
-            onNodesChange: onNodesChange,
-            // A click that wobbles still selects; only a real drag moves a node.
-            nodeDragThreshold: 4,
+            nodesDraggable: false,
             onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
             onPaneClick: function () { setSel(null); },
             fitView: true, fitViewOptions: FIT,
