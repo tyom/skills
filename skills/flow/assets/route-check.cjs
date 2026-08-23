@@ -83,11 +83,16 @@ var detour = index(
   [{ id: 's', kind: 'start' }, { id: 'o', kind: 'decision' }, { id: 'a' }, { id: 't', kind: 'end' }],
   [{ from: 's', to: 'o' }, { from: 'o', to: 't' }, { from: 'o', to: 'a' }, { from: 'a', to: 't' }]
 );
-var via = upstream(detour, 't', walked(['s', 'o', 'a', 't'])).via;
-is('walked the detour, way into t', via.a && via.a.to, 't');
-is('walked the detour, o hands on to', via.o && via.o.to, 'a');
-var dist = upstream(detour, 't', walked(['s', 'o', 'a', 't'])).dist;
-is('walked the detour, o is hops up', dist.o, 2);
+// Walked whole, and walked only from the step above -- a reader who tapped the
+// detour and then walked on leaves a trail that runs out partway, and the rest
+// of the route back must still go through the step it does name.
+[['s', 'o', 'a', 't'], ['a', 't']].forEach(function (trail) {
+  var route = upstream(detour, 't', walked(trail));
+  var of = 'trail ' + trail.join('>') + ', ';
+  is(of + 'way into t', route.via.a && route.via.a.to, 't');
+  is(of + 'o hands on to', route.via.o && route.via.o.to, 'a');
+  is(of + 'o is hops up', route.dist.o, 2);
+});
 is('untrailed, o hands on to', upstream(detour, 't', null).via.o.to, 't');
 
 process.exit(bad ? 1 : 0);

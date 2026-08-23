@@ -349,6 +349,11 @@ import './style.css';
       claim(next);
       on = next.from;
     }
+    // The search picks up where the trail ran out, and nowhere else. Left to
+    // start from the selection it would reach back over the steps just laid
+    // down and claim their parents by whatever shorter way also arrives, and
+    // the route would read past the trail rather than through it.
+    if (prefer) queue = [on];
 
     while (queue.length) {
       var cur = queue.shift();
