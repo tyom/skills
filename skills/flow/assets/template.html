@@ -151,6 +151,7 @@
     background: var(--panel); border-left: 1px solid var(--line);
   }
   .mobile-back { display: none; }
+  .react-flow__panel.canvas-intro { display: none; }
   /* What the panel is about holds still; only the evidence for it scrolls. */
   .panel-head { flex: none; padding: 20px 20px 16px; border-bottom: 1px solid var(--line); }
   .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 17px 20px 28px; }
@@ -406,15 +407,21 @@
       font-size: 15px; border-radius: 8px;
     }
 
-    main.has-selection .canvas, main:not(.has-selection) aside { display: none; }
+    main.panel-open .canvas, main:not(.panel-open) aside { display: none; }
     aside { width: 100%; border-left: 0; }
     .mobile-back {
       display: block; flex: none; align-self: flex-start;
-      min-height: 44px; margin: 12px 16px 0;
+      /* Both labels to one width, so the corner reads as one button that
+         changed its mind rather than two that nearly line up. */
+      min-height: 44px; min-width: 120px; text-align: center; margin: 12px 16px 0;
       color: var(--ink); background: var(--bg);
       border: 1px solid var(--line); border-radius: 6px;
       font: inherit; font-weight: 500; padding: 7px 12px; cursor: pointer;
     }
+    .keys-only { display: none; }
+    /* The button carries its own inset, so it lands in the same place whether
+       the canvas or the panel is on screen. */
+    .react-flow__panel.canvas-intro { display: block; margin: 0; }
     .panel-head { padding: 16px; }
     .panel-body { padding: 16px 16px 28px; }
     .edge-legend, .react-flow__minimap { display: none; }
@@ -1272,6 +1279,7 @@
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
     var menuState = useState(false), showMenu = menuState[0], setShowMenu = menuState[1];
     var noteState = useState(false), showNote = noteState[0], setShowNote = noteState[1];
+    var introState = useState(false), showIntro = introState[0], setShowIntro = introState[1];
     var bgState = useState(true), exportBg = bgState[0], setExportBg = bgState[1];
     var editorState = useState(readEditor), editor = editorState[0], setEditor = editorState[1];
     var themeState = useState(function () {
@@ -1359,9 +1367,11 @@
       });
     }, [placedNodes, sel, lit]);
 
-    // Relayout moves every node, so the old viewport frames nothing.
+    // Relayout moves every node, so the old viewport frames nothing, and so does
+    // a canvas that changed size: a phone rotating, or the panel taking its turn.
     var rf = RF.useReactFlow();
-    useEffect(function () { rf.fitView(FIT); }, [f, dir, rf]);
+    var pane = RF.useStore(function (s) { return s.width + 'x' + s.height; });
+    useEffect(function () { rf.fitView(FIT); }, [f, dir, rf, pane]);
 
     var selectEdge = useCallback(function (id) {
       setSel({ kind: 'edge', id: id });
@@ -1718,11 +1728,13 @@
           linkList(f.links, editor),
           starts(),
           h('p', { className: 'hint' },
-            'Select a node or an edge to see what leads there, or walk the flow ' +
-            'with the arrow keys: down and up along it, left and right across a ' +
-            'branch. M shows the minimap, L turns the layout' +
-            (flows.length > 1 ? ', ' + ALT + '1 and up open a tab' : '') +
-            '. Two fingers pan, pinch zooms.'),
+            'Select a node or an edge to see what leads there. ',
+            // No keyboard on the screen that hides these controls anyway.
+            h('span', { className: 'keys-only' },
+              'Or walk the flow with the arrow keys: down and up along it, left ' +
+              'and right across a branch. M shows the minimap, L turns the layout' +
+              (flows.length > 1 ? ', ' + ALT + '1 and up open a tab' : '') + '. '),
+            'Two fingers pan, pinch zooms.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
                 return h('li', { key: i }, t);
@@ -1829,7 +1841,9 @@
             )
           : null
       ),
-      h('main', { className: sel ? 'has-selection' : '' },
+      // On a narrow screen the canvas and the panel take turns, and the panel's
+      // turn comes from a selection or from the intro button on the canvas.
+      h('main', { className: sel || showIntro ? 'panel-open' : '' },
         h('div', { className: 'canvas canvas-' + canvasTheme },
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
@@ -1849,6 +1863,14 @@
             showMap ? h(RF.MiniMap, {
               pannable: true, zoomable: true, nodeColor: nodeColorOf
             }) : null,
+            // Only a narrow screen hides the panel, so only a narrow screen
+            // has anything to open; the CSS decides, and the panel keeps no
+            // hit area on a wide one.
+            h(RF.Panel, { position: 'top-left', className: 'canvas-intro' },
+              h('button', {
+                className: 'mobile-back',
+                onClick: function () { setShowIntro(true); }
+              }, 'About this flow')),
             h(RF.Panel, { position: 'top-right', className: 'canvas-tools' },
               h('div', {
                 className: 'edge-legend', role: 'list', 'aria-label': 'Edge legend'
@@ -1875,8 +1897,9 @@
           )
         ),
         h('aside', null,
-          sel ? h('button', {
-            className: 'mobile-back', onClick: function () { setSel(null); }
+          sel || showIntro ? h('button', {
+            className: 'mobile-back',
+            onClick: function () { setSel(null); setShowIntro(false); }
           }, 'Back to flow') : null,
           panel()
         )
