@@ -1537,16 +1537,23 @@
     // A stable dep: the memo rebuilds the ranks only when the trail moves.
     var trailKey = onTrail ? walk.current.trail.join('\u0000') : '';
 
+    // Which way the route back goes wherever it has a choice: the walked trail
+    // first, then any branch the reader tapped their way onto, which outranks
+    // the trail because it is the later word on the same question.
+    function preferring(via) {
+      if (!trailKey && !via.length) return null;
+      var rank = Object.create(null);
+      if (trailKey) walk.current.trail.forEach(function (nid, i) { rank[nid] = i; });
+      via.forEach(function (nid, i) { rank[nid] = walk.current.trail.length + i; });
+      return rank;
+    }
+
     // Selecting anything asks the same question: what leads here?
     var lit = useMemo(function () {
       if (!sel) return null;
       // How far down the flow a node stands: the axis the layout runs on.
       var along = dir === 'TB' ? 'y' : 'x';
-      var prefer = null;
-      if (trailKey) {
-        prefer = Object.create(null);
-        walk.current.trail.forEach(function (nid, i) { prefer[nid] = i; });
-      }
+      var prefer = preferring(sel.via || []);
       var id = sel.kind === 'node' ? sel.id : f.edgeById[sel.id].from;
       var up = upstream(f, id, prefer);
 
@@ -1559,7 +1566,7 @@
       //
       // A selected edge has no such shape. It asks what leads to this one edge,
       // so the other ways into the node it leaves are no part of the answer.
-      if (sel.kind === 'node' && !prefer) {
+      if (sel.kind === 'node' && !trailKey) {
         (f.incoming[id] || []).forEach(function (e) {
           if (placed[e.from].position[along] < placed[e.to].position[along] &&
               up.dist[e.from] === undefined) up.dist[e.from] = -1;
@@ -1703,8 +1710,20 @@
     }, [baseEdges, lit, sel]);
 
     var onNodeClick = useCallback(function (_, node) {
+      // Where a branch was taken on the way here, the one not taken is dim but
+      // still leads to the selection. Tapping it moves the route across without
+      // leaving the selection, so the reader can amend a choice made for them;
+      // once it is lit, the next tap selects it like any other node.
+      if (sel && lit && lit.dist[node.id] === undefined) {
+        var via = (sel.via || []).concat([node.id]);
+        var from = sel.kind === 'node' ? sel.id : f.edgeById[sel.id].from;
+        if (upstream(f, from, preferring(via)).dist[node.id] !== undefined) {
+          setSel(Object.assign({}, sel, { via: via }));
+          return;
+        }
+      }
       setSel({ kind: 'node', id: node.id });
-    }, []);
+    }, [f, sel, lit, trailKey]);
     var onEdgeClick = useCallback(function (_, edge) {
       selectEdge(edge.id);
     }, [selectEdge]);
@@ -1963,7 +1982,9 @@
           linkList(f.links, editor),
           starts(),
           h('p', { className: 'hint' },
-            'Select a node or an edge to see what leads there. ',
+            'Select a node or an edge to see what leads there. Tapping a dim ' +
+            'branch that could have led there moves the route across it; tap ' +
+            'again to select it. ',
             // No keyboard on the screen that hides these controls anyway.
             h('span', { className: 'keys-only' },
               'Or walk the flow with the arrow keys: down and up along it, left ' +
