@@ -1538,21 +1538,22 @@
     // a canvas that changed size: a phone rotating, or the panel taking its turn.
     var rf = RF.useReactFlow();
     var pane = RF.useStore(function (s) { return s.width + 'x' + s.height; });
-    function fitReadable(whole) {
+    function fitReadable(whole, animate) {
+      var duration = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 0;
       // Turning the layout is the question of whether the flow reads better the
       // other way round, so that fit answers with all of it, however small it
       // lands. Every other fit keeps the floor.
-      if (whole) { rf.fitView({ padding: FIT.padding }); return; }
+      if (whole) { rf.fitView({ padding: FIT.padding, duration: duration }); return; }
       var focusId = sel && sel.kind === 'node' ? sel.id :
         sel && f.edgeById[sel.id] ? f.edgeById[sel.id].from : startId;
       var focus = placedNodes.find(function (n) { return n.id === focusId; });
-      Promise.resolve(rf.fitView(FIT)).then(function () {
+      Promise.resolve(rf.fitView(Object.assign({}, FIT, { duration: duration }))).then(function () {
         if (!focus || rf.getZoom() > FIT.minZoom + 0.001) return;
         var box = rf.getNodesBounds(placedNodes), size = pane.split('x');
         rf.setCenter(
           held(focus.position.x + focus.width / 2, box.x, box.x + box.width, +size[0]),
           held(focus.position.y + focus.height / 2, box.y, box.y + box.height, +size[1]),
-          { zoom: FIT.minZoom }
+          { zoom: FIT.minZoom, duration: duration }
         );
       });
     }
@@ -1930,7 +1931,7 @@
               'Or walk the flow with the arrow keys: down and up along it, left ' +
               'and right across a branch. M shows the minimap, L turns the layout' +
               (flows.length > 1 ? ', ' + ALT + '1 and up open a tab' : '') + '. '),
-            'Two fingers pan, pinch zooms.'),
+            'Two fingers pan and pinch zooms. Double-click blank space to refit.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
                 return h('li', { key: i }, t);
@@ -2049,7 +2050,12 @@
       // On a narrow screen the canvas and the panel take turns, and the panel's
       // turn comes from a selection or from the intro button on the canvas.
       h('main', { className: sel || showIntro ? 'panel-open' : '' },
-        h('div', { className: 'canvas canvas-' + canvasTheme },
+        h('div', {
+          className: 'canvas canvas-' + canvasTheme,
+          onDoubleClickCapture: function (ev) {
+            if (ev.target.classList.contains('react-flow__pane')) fitReadable(false, true);
+          }
+        },
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
             nodesDraggable: false,
@@ -2060,7 +2066,7 @@
             // is expected to answer. Pinch arrives as ctrl + wheel, which React
             // Flow keeps for zoom once the plain wheel is spent on panning.
             // Shift is its box-select key and box-select does nothing here.
-            panOnScroll: true, selectionKeyCode: null,
+            panOnScroll: true, zoomOnDoubleClick: false, selectionKeyCode: null,
             proOptions: { hideAttribution: true },
             minZoom: 0.1
           },
