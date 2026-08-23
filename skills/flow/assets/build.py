@@ -58,6 +58,10 @@ EDGE_KINDS = {"async", "error", "retry"}
 # h1 is counted; h2 is the middle tier and is meant to be the commoner of the two.
 LEVELS = {"h1", "h2"}
 H1_SHARE = 1 / 3
+# Borrowed rather than calibrated for a diagram: ten is McCabe's convention from
+# code review, and fifteen sits between the deepest flow that read well here and
+# the one that did not. Both warnings carry their number so a wrong band shows.
+MAX_VG, MAX_DEPTH = 10, 15
 
 # A browser cannot ask the OS for "the" editor, and a reader may not use the one
 # the trace was built on, so the page holds every opener and this is only the one
@@ -265,12 +269,70 @@ def measure(flow):
         if node["id"] not in seen:
             walk(node["id"])
 
-    rank = dict.fromkeys(ids, 0)
+    rank, prev = dict.fromkeys(ids, 0), {}
     for nid in reversed(order):
         for nxt in onward[nid]:
             if (nid, nxt) not in back and rank[nid] + 1 > rank[nxt]:
                 rank[nxt] = rank[nid] + 1
-    return len(edges) + ends - len(ids) + 1, max(rank.values()) + 1
+                prev[nxt] = nid
+
+    # The spine is the longest path itself. Only the nodes on it cost depth, so
+    # it is the one list worth showing an author who has to make a flow shorter.
+    at = {n["id"]: i for i, n in enumerate(flow["nodes"])}
+    spine, cur = [], max(rank, key=lambda k: (rank[k], -at[k]))
+    while cur is not None:
+        spine.append(cur)
+        cur = prev.get(cur)
+    spine.reverse()
+    return {"v": len(edges) + ends - len(ids) + 1, "depth": max(rank.values()) + 1,
+            "rank": rank, "spine": spine}
+
+
+def cuts(flow, m):
+    """Where a flow that is too deep divides, and which of its nodes cost a rank
+    without earning one.
+
+    A split is offered at a node every path already crosses, so the seam is found
+    rather than invented. That node lands in both halves, as the terminal of one
+    tab and the entry of the other, which is why the two depths overlap by one.
+    """
+    by_id = {n["id"]: n for n in flow["nodes"]}
+    edges = [e for e in flow["edges"] if e["from"] in by_id and e["to"] in by_id]
+    onward, into, out_of = collections.defaultdict(list), collections.Counter(), collections.defaultdict(list)
+    for e in edges:
+        onward[e["from"]].append(e["to"])
+        into[e["to"]] += 1
+        out_of[e["from"]].append(e)
+    starts = {n["id"] for n in flow["nodes"] if n.get("kind") == "start"}
+    ends = {n["id"] for n in flow["nodes"] if n.get("kind") in ("end", "success")}
+
+    def reaches(skip):
+        seen, queue = set(), list(starts)
+        while queue:
+            cur = queue.pop()
+            if cur in seen or cur == skip:
+                continue
+            seen.add(cur)
+            queue += onward[cur]
+        return seen & ends
+
+    found = []
+    for i, node in enumerate(flow["nodes"]):
+        nid = node["id"]
+        if nid in starts or nid in ends or reaches(nid):
+            continue
+        a, b = m["rank"][nid] + 1, m["depth"] - m["rank"][nid]
+        # Below three ranks a half is a start wired straight to an end, which is
+        # the tab too thin to justify its own diagram.
+        if min(a, b) >= 3:
+            found.append((abs(a - b), i, nid, a, b))
+
+    # One edge in, one out, and no label to lose: the rank is all it costs.
+    merge = [nid for nid in m["spine"]
+             if into[nid] == 1 and len(out_of[nid]) == 1
+             and by_id[nid].get("kind", "step") in ("step", "io", "store")
+             and not out_of[nid][0].get("label")]
+    return (min(found)[2:] if found else None), merge
 
 
 # Checked before the page is written, so each flow can carry its own problems
@@ -280,7 +342,20 @@ editor = data.get("editor") or detect_editor()
 if editor not in EDITORS:
     sys.exit(f"build.py: unknown editor {editor!r}: use one of {', '.join(EDITORS)}")
 
+measures = [measure(flow) for flow in flows]
 reports = [check(flow, root) for flow in flows]
+for flow, m, (warnings, _) in zip(flows, measures, reports):
+    # Depth is a fault in the trace and answers to a split. Branching belongs to
+    # the subject, and nothing here can cut it, so that one only gets its number.
+    if m["depth"] > MAX_DEPTH:
+        warnings.append(("deeper than one graph reads", f"{m['depth']} ranks"))
+        split, merge = cuts(flow, m)
+        if split:
+            warnings.append(("split candidate", f"{split[0]}: {split[1]} + {split[2]} ranks"))
+        if merge:
+            warnings.append(("costs a rank, earns none", ", ".join(merge)))
+    if m["v"] > MAX_VG:
+        warnings.append(("branching is high", f"V(G) {m['v']}; no split reduces it"))
 for flow, (_, bad) in zip(flows, reports):
     flow["problems"] = [f"{what}: {where}" for what, where in bad]
 
@@ -310,11 +385,11 @@ print(f"{out}  ({len(page) // 1024}KB, {len(flows)} flow(s), {n} nodes, {e} edge
 
 # Printed every run rather than only when high: nobody has calibrated a band for
 # a diagram yet, and a number you see on every build is what will settle one.
-for i, flow in enumerate(flows):
-    v, depth = measure(flow)
+for i, (flow, m) in enumerate(zip(flows, measures)):
     # Two spaces of its own, since a title is the author's text and can be any
     # length; without them a long one runs straight into the number.
-    print(f"  {(flow.get('title') or f'flows[{i}]'):<26}  V(G) {v}, {depth} ranks")
+    print(f"  {(flow.get('title') or f'flows[{i}]'):<26}  "
+          f"V(G) {m['v']}, {m['depth']} ranks")
 
 for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
     if not warnings and not bad:
