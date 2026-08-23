@@ -14,6 +14,7 @@
     --io: #2563eb; --store: #7c3aed; --end: #dc2626; --fork: #0d9488; --state: #db2777;
     --success: #059669; --join: var(--fork);
     --ok: var(--success); --bad: var(--end);
+    --shadow: rgb(0 0 0 / 14%);
   }
   /* The dark palette, written once. The page wears this class to follow the
      system; the canvas wears it on its own so it can be dark while the page is
@@ -23,7 +24,7 @@
     --line: #2a3038; --accent: #60a5fa;
     --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
     --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
-    --success: #34d399;
+    --success: #34d399; --shadow: rgb(0 0 0 / 50%);
   }
   * { box-sizing: border-box; }
   html, body, #root { height: 100%; margin: 0; }
@@ -78,7 +79,7 @@
     position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
     min-width: 142px; padding: 4px; background: var(--panel);
     border: 1px solid var(--line); border-radius: 7px;
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
+    box-shadow: 0 8px 24px var(--shadow);
   }
   header .export-menu button {
     display: block; width: 100%; padding: 6px 8px; text-align: left;
@@ -117,7 +118,6 @@
     align-self: center; white-space: nowrap;
   }
   header .badge:hover { border-color: currentColor; }
-  .badge.ok { color: var(--ok); padding: 2px 7px; }
   .badge.bad { color: var(--bad); }
   /* The tick is the whole badge once the words no longer fit. */
   .badge .mark { display: none; }
@@ -126,7 +126,7 @@
     width: max-content; max-width: min(260px, 74vw); padding: 8px 10px;
     color: var(--ink); background: var(--panel); font-size: 12px;
     white-space: pre-line; border: 1px solid var(--line); border-radius: 7px;
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
+    box-shadow: 0 8px 24px var(--shadow);
   }
 
   main { flex: 1; display: flex; min-height: 0; }
@@ -191,8 +191,14 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
-  aside .trail { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
+  /* One vertical slice of the diagram: what led here, this step, then every way
+     on. A single spine down the left runs through all three, so the panel reads
+     as a column of the flow rather than two lists of links. */
+  aside .slice { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
   aside .trail-label { font-size: 12px; color: var(--muted); }
+  aside .trail-label.out { margin-top: 15px; }
+  aside .slice .hint { margin: 0; font-size: 13px; }
+  aside .slice .hint.out { margin-top: 15px; }
   /* A spine through the numbers: this is one path in order, not a bag of links.
      Each number sits on the panel colour and masks the line behind it. */
   aside .steps {
@@ -200,16 +206,41 @@
     list-style: none; counter-reset: step;
   }
   aside .steps::before {
-    content: ''; position: absolute; left: 7px; top: 4px; bottom: 14px;
+    content: ''; position: absolute; left: 7px; top: 4px; bottom: 4px;
     width: 1px;
     /* --line is a border against a panel and disappears as a standalone rule;
        the spine has to carry the eye down five items. */
     background: color-mix(in srgb, var(--muted) 40%, transparent);
   }
-  aside .steps li { position: relative; padding: 4px 0 10px; }
+  aside .steps li, aside .nexts li { position: relative; padding: 4px 0 10px; }
+  aside .nexts { margin: 9px 0 0; padding: 0 0 0 26px; list-style: none; }
+  /* The ways on are a bullet list, not an order: no numbers, and the bullets sit
+     on the spine so they read as the fork below this step. */
+  aside .nexts li::before {
+    content: ''; position: absolute; left: -21px; top: 12px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: color-mix(in srgb, var(--muted) 70%, transparent);
+  }
+  aside .nexts li:hover::before { background: var(--accent); }
+  /* The step the panel is about, on the spine between the two lists. It repeats
+     the title on purpose: it is what both lists are relative to. */
+  aside .here {
+    position: relative; margin: 2px 0 0; padding: 7px 0 7px 26px;
+    font-size: 15px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere;
+  }
+  /* The spine stops at the last step above; this carries it into the marker. */
+  aside .steps + .here::before {
+    content: ''; position: absolute; left: 7px; top: -6px; height: 22px; width: 1px;
+    background: color-mix(in srgb, var(--muted) 40%, transparent);
+  }
+  aside .here::after {
+    content: ''; position: absolute; left: 3px; top: 11px;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 3px var(--panel);
+  }
   /* Two things to do with a step, so two controls: open it, or open its file.
      A link inside a button would be neither. */
-  aside .steps .open {
+  aside .steps .open, aside .nexts .open {
     display: block; width: 100%; padding: 0; text-align: left;
     font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
   }
@@ -219,17 +250,19 @@
     background: var(--panel); text-align: center;
     font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
   }
-  aside .steps li:hover, aside .steps li:hover::before { color: var(--accent); }
-  aside .steps .open:focus-visible, aside .steps .ref:focus-visible {
+  aside .steps li:hover, aside .steps li:hover::before,
+  aside .nexts li:hover { color: var(--accent); }
+  aside .steps .open:focus-visible, aside .steps .ref:focus-visible,
+  aside .nexts .open:focus-visible, aside .nexts .ref:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
   }
-  aside .steps .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
-  aside .steps .ref {
+  aside .steps .branch, aside .nexts .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
+  aside .steps .ref, aside .nexts .ref {
     display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     text-decoration: none;
   }
-  aside .steps a.ref:hover { color: var(--accent); text-decoration: underline; }
+  aside .steps a.ref:hover, aside .nexts a.ref:hover { color: var(--accent); text-decoration: underline; }
 
   /* The badge is loud about a broken trace, so its explanation cannot whisper. */
   aside .problems {
@@ -238,6 +271,15 @@
     background: color-mix(in srgb, var(--bad) 9%, transparent);
   }
   aside .problems li { margin: 3px 0; }
+  /* The same box as a problem, in the colour of a pass and quieter with it:
+     enough edge to be found, not enough to compete with the diagram. */
+  aside .verdict {
+    margin: 20px 0 0; padding: 9px 12px; border-radius: 8px;
+    font-size: 13px; line-height: 1.5; color: var(--muted);
+    border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+    background: color-mix(in srgb, var(--ok) 7%, transparent);
+  }
+  aside .verdict .mark { margin-right: 6px; color: var(--ok); }
 
   .node {
     border-radius: 8px; text-align: left; cursor: grab; transition: opacity .15s;
@@ -734,6 +776,10 @@
     return n === 1 ? '1 step leads here' : n + ' steps lead here';
   }
 
+  function leadOut(n) {
+    return n === 1 ? '1 step follows' : n + ' steps follow';
+  }
+
   // The separators live here, so an absent fact never leaves a stray dot behind.
   function metaRow(parts) {
     var out = [];
@@ -1184,13 +1230,16 @@
   function useDismiss(open, setOpen, ref) {
     useEffect(function () {
       if (!open) return;
-      var first = ref.current.querySelector('[role="menu"] button');
+      var first = ref.current && ref.current.querySelector('[role="menu"] button');
       if (first) first.focus();
+      // The check badge leaves with a switch to a clean tab, and takes its
+      // popover with it, so the box can be gone while the flag is still up.
       function close(ev) {
         if (ev.type === 'keydown' && ev.key !== 'Escape') return;
-        if (ev.type === 'mousedown' && ref.current.contains(ev.target)) return;
+        var box = ref.current;
+        if (ev.type === 'mousedown' && box && box.contains(ev.target)) return;
         setOpen(false);
-        if (ev.type === 'keydown') ref.current.querySelector('button').focus();
+        if (ev.type === 'keydown' && box) box.querySelector('button').focus();
       }
       addEventListener('mousedown', close); addEventListener('keydown', close);
       return function () {
@@ -1390,28 +1439,45 @@
         .map(function (e) { return e.label; })).join(' / ');
     }
 
-    // The steps that lead here, start first — the reason the highlight lit up.
-    function trail(minDist) {
+    // One row of a list: the step itself, and the file it lives in.
+    function stepRow(id, key, branch) {
+      var n = f.nodeById[id] || {};
+      function open() { setSel({ kind: 'node', id: id }); }
+      return h('li', { key: key },
+        h('button', { className: 'open', onClick: open },
+          labelOf(f, id),
+          branch ? h('span', { className: 'branch' }, '\u2192 ' + branch) : null
+        ),
+        n.refLink
+          ? fileLink(n.refLink, n.ref, 'ref', editor)
+          : (n.ref ? h('span', { className: 'ref' }, n.ref) : null)
+      );
+    }
+
+    // The panel's slice of the diagram, in the order the flow runs: the steps
+    // that led here start-first, this step, then every way on. The middle line
+    // repeats the title on purpose — it is what both lists are relative to, and
+    // it is where the arrow keys are standing.
+    function slice(here, minDist, outs) {
       var ids = stepsInto(lit, minDist);
-      if (!ids.length) {
-        return h('p', { className: 'hint' }, 'Nothing leads here. This is a starting point.');
-      }
-      return h('div', { className: 'trail' },
-        h('div', { className: 'trail-label' }, leadIn(ids.length)),
-        h('ol', { className: 'steps' }, ids.map(function (id) {
-          var n = f.nodeById[id];
-          var branch = branchOut(id);
-          function open() { setSel({ kind: 'node', id: id }); }
-          return h('li', { key: id },
-            h('button', { className: 'open', onClick: open },
-              labelOf(f, id),
-              branch ? h('span', { className: 'branch' }, '→ ' + branch) : null
-            ),
-            n.refLink
-              ? fileLink(n.refLink, n.ref, 'ref', editor)
-              : (n.ref ? h('span', { className: 'ref' }, n.ref) : null)
-          );
-        }))
+      return h('nav', { className: 'slice' },
+        ids.length
+          ? h(React.Fragment, null,
+              h('div', { className: 'trail-label' }, leadIn(ids.length)),
+              h('ol', { className: 'steps' }, ids.map(function (id) {
+                return stepRow(id, id, branchOut(id));
+              })))
+          : h('p', { className: 'hint' }, 'Nothing leads here. This is a starting point.'),
+        h('div', { className: 'here' }, here),
+        // Unlike the trail, this is every branch, not the one the highlight
+        // took, so a decision names both ways out.
+        outs.length
+          ? h(React.Fragment, null,
+              h('div', { className: 'trail-label out' }, leadOut(outs.length)),
+              h('ul', { className: 'nexts' }, outs.map(function (e) {
+                return stepRow(e.to, e.id, e.label);
+              })))
+          : h('p', { className: 'hint out' }, 'Nothing follows. This is an end point.')
       );
     }
 
@@ -1435,7 +1501,7 @@
             n.note ? h('p', { className: 'note' }, n.note) : null,
             paragraphs(n.detail || 'No detail recorded for this step.', 'detail'),
             linkList(n.links, editor),
-            trail(1)
+            slice(n.label || n.id, 1, f.outgoing[sel.id] || [])
           )
         );
       }
@@ -1455,7 +1521,9 @@
               : h('p', { className: 'hint' },
                   'No detail recorded for this ' + wordFor(f, e) + '.'),
             linkList(e.links, editor),
-            trail(0)
+            // An edge's own slice: what led into it, the move itself, and the
+            // step it lands on.
+            slice(e.label || move, 0, [e])
           )
         );
       }
@@ -1476,7 +1544,10 @@
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
                 return h('li', { key: i }, t);
               }))
-            : null
+            // A passing check is worth saying once, where the diagram introduces
+            // itself, rather than wearing a badge in the header all session.
+            : h('p', { className: 'verdict' },
+                h('span', { className: 'mark' }, '\u2713'), checkText)
         )
       );
     }
@@ -1516,9 +1587,9 @@
       : 'Trace valid';
     var checkText = f.problems.length
       ? f.problems.join('\n')
-      : f.nodeList.length + ' nodes checked at build time: ids unique, kinds ' +
-        'known, every edge resolves, every decision branches, every path ' +
-        'reaches an end.';
+      : 'Trace valid: ' + f.nodeList.length + ' nodes checked at build time — ids ' +
+        'unique, kinds known, every edge resolves, every decision branches, ' +
+        'every path reaches an end.';
 
     return h(React.Fragment, null,
       h('header', null,
@@ -1558,16 +1629,20 @@
                 dirButton, openerSelect, exportItems)
             : null
         ),
-        h('div', { className: 'check', ref: checkRef },
-          h('button', {
-            className: 'badge ' + (f.problems.length ? 'bad' : 'ok'),
-            title: checkText, 'aria-label': checkLabel, 'aria-expanded': showNote,
-            onClick: function () { setShowNote(!showNote); }
-          },
-            h('span', { className: 'mark' }, f.problems.length ? '⚠' : '✓'),
-            h('span', { className: 'label' }, checkLabel)),
-          showNote ? h('div', { className: 'check-note' }, checkText) : null
-        )
+        // Only a broken trace is loud enough to sit in the header; the passing
+        // one is a line in the panel.
+        f.problems.length
+          ? h('div', { className: 'check', ref: checkRef },
+              h('button', {
+                className: 'badge bad',
+                title: checkText, 'aria-label': checkLabel, 'aria-expanded': showNote,
+                onClick: function () { setShowNote(!showNote); }
+              },
+                h('span', { className: 'mark' }, '\u26a0'),
+                h('span', { className: 'label' }, checkLabel)),
+              showNote ? h('div', { className: 'check-note' }, checkText) : null
+            )
+          : null
       ),
       h('main', { className: sel ? 'has-selection' : '' },
         h('div', { className: 'canvas canvas-' + canvasTheme },
