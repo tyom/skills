@@ -28,8 +28,8 @@ move it. The graph should answer whether one state can reach another.
 - Dunning: a failed payment through its retry schedule, grace period and downgrade. The same subject as payment authorisation, but over weeks, which is what makes it a state machine.
 - XState or reducer machines, even when one file contains the whole definition.
 
-Use `retry` for a transition that returns to an earlier attempt. This stops the
-highlight walk from treating the loop as progress.
+Use `retry` for a transition that returns to an earlier attempt. The edge `kind`
+field in [`SKILL.md`](SKILL.md) says why the tag matters.
 
 ## Failure and fallback
 
