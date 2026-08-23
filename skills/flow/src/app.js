@@ -323,25 +323,42 @@ import './style.css';
     var seen = Object.create(null), via = Object.create(null);
     var queue = [nodeId], far = nodeId, start = null;
     seen[nodeId] = true;
+    function claim(e) {
+      seen[e.from] = true;
+      via[e.from] = e;
+      queue.push(e.from);
+      far = e.from;
+      // The nearest start is where a reader would begin, so it wins over the
+      // furthest node, which in a loop is only the long way round.
+      if (!start && kindOf((f.nodeById[e.from] || {}).kind) === 'start') start = e.from;
+    }
+
+    // The trail is a route, not a preference to apply at each fork. A search by
+    // shortest hop would claim a step the reader passed through by whatever
+    // short way also reaches it, and the detour they actually walked would drop
+    // out of the route between. So the trail is laid down first and whole,
+    // latest step first, and the search below only fills in what it left.
+    var on = nodeId;
+    while (prefer) {
+      var next = null;
+      waysIn(f, on).forEach(function (e) {
+        if (seen[e.from] || rankOf(e) < 0) return;
+        if (!next || rankOf(e) > rankOf(next)) next = e;
+      });
+      if (!next) break;
+      claim(next);
+      on = next.from;
+    }
+
     while (queue.length) {
       var cur = queue.shift();
       var ways = waysIn(f, cur);
-      // Ways the reader has already walked are taken first, latest first, so
-      // the route back follows the trail wherever it still has one and falls
-      // back to the declared order only where it does not.
+      // Off the trail the route falls back to the declared order, latest
+      // preference first where a branch was tapped onto rather than walked.
       if (prefer) {
         ways = ways.slice().sort(function (a, b) { return rankOf(b) - rankOf(a); });
       }
-      ways.forEach(function (e) {
-        if (seen[e.from]) return;
-        seen[e.from] = true;
-        via[e.from] = e;
-        queue.push(e.from);
-        far = e.from;
-        // The nearest start is where a reader would begin, so it wins over the
-        // furthest node, which in a loop is only the long way round.
-        if (!start && kindOf((f.nodeById[e.from] || {}).kind) === 'start') start = e.from;
-      });
+      ways.forEach(function (e) { if (!seen[e.from]) claim(e); });
     }
 
     // via[x] is the edge out of x towards nodeId, so following it always closes
