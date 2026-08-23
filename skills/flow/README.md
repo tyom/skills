@@ -5,16 +5,16 @@ the skill into an agent so `/flow` works, see the repo [README](../../README.md)
 
 ## Render the fixtures
 
-`assets/build.sh <flow.json> <out.html> <source-root>` is the whole build. Run
+`assets/build.py <flow.json> <out.html> <source-root>` is the whole build. Run
 it from this directory:
 
 ```bash
 # Every node and edge kind, once. No refs, so nothing to resolve.
-assets/build.sh assets/kinds-probe.json /tmp/flow-probe.html .
+assets/build.py assets/kinds-probe.json /tmp/flow-probe.html .
 open /tmp/flow-probe.html
 
 # A real single-flow trace. Its refs point at this repo, hence ../..
-assets/build.sh assets/example.json /tmp/flow-example.html ../..
+assets/build.py assets/example.json /tmp/flow-example.html ../..
 open /tmp/flow-example.html
 ```
 
@@ -38,7 +38,7 @@ problem is not silent. Break a copy to see it:
 
 ```bash
 sed 's/"kind": "success"/"kind": "step"/' assets/kinds-probe.json > /tmp/bad.json
-assets/build.sh /tmp/bad.json /tmp/flow-bad.html . ; echo "exit=$?"
+assets/build.py /tmp/bad.json /tmp/flow-bad.html . ; echo "exit=$?"
 ```
 
 Expect `path stops, not an end`, exit 1, and the problem repeated in a badge on

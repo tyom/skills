@@ -108,7 +108,7 @@ Done when the JSON contains the traced behaviour with no coordinates, styles, or
 Run from this skill's base directory:
 
 ```sh
-assets/build.sh /tmp/YYYY-MM-DD-flow-<slug>.json /tmp/YYYY-MM-DD-flow-<slug>.html <source-root>
+assets/build.py /tmp/YYYY-MM-DD-flow-<slug>.json /tmp/YYYY-MM-DD-flow-<slug>.html <source-root>
 ```
 
 `<source-root>` is the common root that local refs are relative to, not this skill's directory. Use the working directory when the flow has no local refs. The build writes the page even when checks fail. Fix the JSON and rebuild until the command is silent apart from its output-file summary. Resolve every ref warning when the referenced source exists.

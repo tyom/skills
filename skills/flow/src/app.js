@@ -97,12 +97,12 @@ import './style.css';
   var ACCENT = css.getPropertyValue('--accent').trim();
   var MUTED = css.getPropertyValue('--muted').trim();
 
-  // Unknown kinds fall back to 'step'; build.sh calls one out as a problem.
+  // Unknown kinds fall back to 'step'; build.py calls one out as a problem.
   function kindOf(kind) { return KINDS.indexOf(kind) === -1 ? 'step' : kind; }
   function isBar(kind) { return kind === 'fork' || kind === 'join'; }
   // A level a stylesheet has no rule for falls back to the base node, and so
   // does a level on a bar — a bar is pinned to its height and shows one line.
-  // build.sh calls both out as problems.
+  // build.py calls both out as problems.
   function levelOf(n) {
     return !isBar(n.kind) && (n.level === 'h1' || n.level === 'h2') ? n.level : '';
   }
@@ -250,7 +250,7 @@ import './style.css';
   var doc = JSON.parse(document.getElementById('flow-data').textContent);
 
   // Each tab is an independent graph: its own ids, its own validation, its own
-  // adjacency. Nothing crosses between them. build.sh normalises the one-diagram
+  // adjacency. Nothing crosses between them. build.py normalises the one-diagram
   // shorthand into this array, so there is always at least one.
   function prepare(flow) {
     var nodeList = flow.nodes || [], edgeList = flow.edges || [];
@@ -275,7 +275,7 @@ import './style.css';
     return {
       title: flow.title || '', summary: flow.summary || '', links: flow.links || null,
       nodeList: nodeList, edgeItems: edgeItems,
-      // build.sh checked this graph and wrote its verdict in, so the badge on
+      // build.py checked this graph and wrote its verdict in, so the badge on
       // the page and the build output cannot disagree.
       problems: flow.problems || [],
       incoming: incoming, outgoing: outgoing,
@@ -556,7 +556,7 @@ import './style.css';
     return h('a', { className: className, href: opener.url(link) }, label);
   }
 
-  // build.sh has already settled that a url is http(s) and that an abs is a
+  // build.py has already settled that a url is http(s) and that an abs is a
   // file inside the source root, so a link with neither is one it warned about:
   // it reads as the path it claimed, without offering to open it.
   function linkList(list, editor) {

@@ -1,33 +1,30 @@
-#!/usr/bin/env bash
-# build.sh <flow.json> <out.html> <source-root>
-# Inlines the flow data into the bundled page, then checks the graph and refs
-# against source-root.
-set -euo pipefail
+#!/usr/bin/env python3
+"""build.py <flow.json> <out.html> <source-root>
 
-if [ $# -ne 3 ]; then
-  echo "usage: build.sh <flow.json> <out.html> <source-root>" >&2
-  exit 2
-fi
-
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-
+Inlines the flow data into the bundled page, then checks the graph and refs
+against source-root.
+"""
 # ponytail: one stdlib process builds and checks the page. A second templating
 # tool would only duplicate the escaping and file handling below.
-DIR="$DIR" IN="$1" OUT="$2" ROOT="$3" python3 <<'PY'
 import collections, functools, html, json, os, pathlib, sys
 
-d = pathlib.Path(os.environ["DIR"])
-src = pathlib.Path(os.environ["IN"])
+if len(sys.argv) != 4:
+    # 2, not 1: a broken graph also exits non-zero, and the two are worth telling apart.
+    print("usage: build.py <flow.json> <out.html> <source-root>", file=sys.stderr)
+    sys.exit(2)
+
+d = pathlib.Path(__file__).resolve().parent
+src = pathlib.Path(sys.argv[1])
 
 try:
     data = json.loads(src.read_text())
 except (OSError, json.JSONDecodeError) as e:
-    sys.exit(f"build.sh: cannot read {src}: {e}")
+    sys.exit(f"build.py: cannot read {src}: {e}")
 
 # One diagram is written flat; several arrive under `flows`. The page only ever
 # sees the array, so the shorthand is widened here.
 if not isinstance(data, dict):
-    sys.exit(f"build.sh: {src} must hold a JSON object")
+    sys.exit(f"build.py: {src} must hold a JSON object")
 nested = isinstance(data.get("flows"), list) and bool(data["flows"])
 flows = data["flows"] if nested else [data]
 
@@ -36,19 +33,19 @@ flows = data["flows"] if nested else [data]
 for i, flow in enumerate(flows):
     where = f"flows[{i}]" if nested else "top level"
     if not isinstance(flow, dict):
-        sys.exit(f"build.sh: {src} needs an object at {where}")
+        sys.exit(f"build.py: {src} needs an object at {where}")
     for key in ("nodes", "edges"):
         if not isinstance(flow.get(key), list):
-            sys.exit(f"build.sh: {src} needs a {key!r} array at {where}")
+            sys.exit(f"build.py: {src} needs a {key!r} array at {where}")
     if not flow["nodes"]:
-        sys.exit(f"build.sh: {src} has no nodes at {where}")
+        sys.exit(f"build.py: {src} has no nodes at {where}")
     for j, n in enumerate(flow["nodes"]):
         if not isinstance(n, dict) or not isinstance(n.get("id"), str) or not n["id"]:
-            sys.exit(f"build.sh: {src} needs a string 'id' at {where}.nodes[{j}]")
+            sys.exit(f"build.py: {src} needs a string 'id' at {where}.nodes[{j}]")
     for j, e in enumerate(flow["edges"]):
         ends = [e.get(k) for k in ("from", "to")] if isinstance(e, dict) else []
         if len(ends) != 2 or not all(isinstance(x, str) and x for x in ends):
-            sys.exit(f"build.sh: {src} needs string 'from' and 'to' at {where}.edges[{j}]")
+            sys.exit(f"build.py: {src} needs string 'from' and 'to' at {where}.edges[{j}]")
 
 # The vocabulary SKILL.md documents. Unknown kinds render as a plain step, so
 # without this a typo silently paints a success terminal as an ordinary box.
@@ -91,15 +88,15 @@ def resolve_links(owner, where, root, warnings):
     if links is None:
         return
     if not isinstance(links, list):
-        sys.exit(f"build.sh: {src} needs a 'links' array at {where}")
+        sys.exit(f"build.py: {src} needs a 'links' array at {where}")
     for k, link in enumerate(links):
         if not isinstance(link, dict) or not (link.get("url") or link.get("path")):
-            sys.exit(f"build.sh: {src} needs 'url' or 'path' at {where}.links[{k}]")
+            sys.exit(f"build.py: {src} needs 'url' or 'path' at {where}.links[{k}]")
         if link.get("url"):
             # The page renders a url as an anchor, so a scheme that carries code
             # has no business reaching it.
             if not link["url"].lower().startswith(("http://", "https://")):
-                sys.exit(f"build.sh: {src} needs an http(s) 'url' at {where}.links[{k}]")
+                sys.exit(f"build.py: {src} needs an http(s) 'url' at {where}.links[{k}]")
             link.setdefault("label", link["url"])
             continue
         path, line = link["path"], link.get("line")
@@ -230,10 +227,10 @@ def check(flow, root):
 
 # Checked before the page is written, so each flow can carry its own problems
 # and the badge on the page says exactly what this output says.
-root = pathlib.Path(os.environ["ROOT"]).resolve()
+root = pathlib.Path(sys.argv[3]).resolve()
 editor = data.get("editor") or detect_editor()
 if editor not in EDITORS:
-    sys.exit(f"build.sh: unknown editor {editor!r}: use one of {', '.join(EDITORS)}")
+    sys.exit(f"build.py: unknown editor {editor!r}: use one of {', '.join(EDITORS)}")
 
 reports = [check(flow, root) for flow in flows]
 for flow, (_, bad) in zip(flows, reports):
@@ -251,12 +248,12 @@ for marker, part in (
                           .replace("</", "<\\/")),
 ):
     if marker not in page:
-        sys.exit(f"build.sh: template.html is missing {marker}")
+        sys.exit(f"build.py: template.html is missing {marker}")
     page = page.replace(marker, part, 1)
 
 # The page is written either way: a broken graph has to stay openable while it
 # is being fixed.
-out = pathlib.Path(os.environ["OUT"])
+out = pathlib.Path(sys.argv[2])
 out.write_text(page)
 n = sum(len(f["nodes"]) for f in flows)
 e = sum(len(f["edges"]) for f in flows)
@@ -273,4 +270,3 @@ for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
         print(f"  {what:<28}{where}")
 
 sys.exit(1 if any(bad for _, bad in reports) else 0)
-PY
