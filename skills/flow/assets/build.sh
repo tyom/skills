@@ -55,6 +55,12 @@ for i, flow in enumerate(flows):
 NODE_KINDS = {"start", "step", "decision", "io", "store", "end", "success",
               "fork", "join", "state"}
 EDGE_KINDS = {"async", "error", "retry"}
+# Emphasis, not evidence: a level renders a node larger so a long flow reads as
+# a few phases. It only works by contrast, so H1_SHARE is the point past which
+# the top tier has stopped being emphasis and is just a bigger flat cloud. Only
+# h1 is counted; h2 is the middle tier and is meant to be the commoner of the two.
+LEVELS = {"h1", "h2"}
+H1_SHARE = 1 / 3
 
 # A browser cannot ask the OS for "the" editor, and a reader may not use the one
 # the trace was built on, so the page holds every opener and this is only the one
@@ -161,12 +167,25 @@ def check(flow, root):
         kind = node.get("kind", "step")
         if kind not in NODE_KINDS:
             bad.append(("unknown node kind", f"{nid}: {kind}"))
+        level = node.get("level")
+        if level is not None and level not in LEVELS:
+            bad.append(("unknown node level", f"{nid}: {level}"))
+        # A bar is pinned to its height and shows only its label, so a level set
+        # on one is silently nothing. Say so rather than render it unchanged.
+        if level is not None and kind in ("fork", "join"):
+            bad.append(("level on a bar", f"{nid}: {kind}"))
         if kind == "decision" and len(outgoing[nid]) < 2:
             bad.append((f"decision, {len(outgoing[nid])} way out", f"{nid}: {label}"))
         if kind not in ("end", "success") and not outgoing[nid]:
             bad.append(("path stops, not an end", f"{nid}: {label}"))
         if kind == "start" and incoming[nid]:
             bad.append(("start has an inbound edge", f"{nid}: {label}"))
+
+    top = [n for n in nodes if n.get("level") == "h1"
+           and n.get("kind", "step") not in ("fork", "join")]
+    if nodes and len(top) > len(nodes) * H1_SHARE:
+        warnings.append(("h1 too often to stand out",
+                         f"{len(top)} of {len(nodes)} nodes"))
 
     for e in edges:
         where = f"{e['from']} -> {e['to']}"
@@ -250,7 +269,7 @@ for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
     if not warnings and not bad:
         continue
     counts = [f"{len(bad)} problem(s)"] if bad else []
-    counts += [f"{len(warnings)} ref warning(s)"] if warnings else []
+    counts += [f"{len(warnings)} warning(s)"] if warnings else []
     print(f"{flow.get('title') or f'flows[{i}]'}: {', '.join(counts)}")
     for what, where in bad + warnings:
         print(f"  {what:<28}{where}")

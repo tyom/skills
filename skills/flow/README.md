@@ -19,8 +19,9 @@ open /tmp/flow-example.html
 ```
 
 `kinds-probe.json` is the one to open after touching `template.html` or
-`vendor.js`: its four tabs cover fork/join, multiple entries, decision
-reconvergence, a retry, a state cycle, a self-edge, and every node and edge kind.
+`vendor.js`: its five tabs cover fork/join, multiple entries, decision
+reconvergence, a retry, a state cycle, a self-edge, every node and edge kind, and
+both levels against every shape that sizes itself.
 Click a node and an edge on each tab, check the detail panel fills, and walk it
 with the arrow keys. A selection after the join must light all three parallel
 branches. A selection after the shared entry must light both entries. A

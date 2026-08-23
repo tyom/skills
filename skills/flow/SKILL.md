@@ -77,6 +77,8 @@ Nodes:
 - `kind`: `start`, `step`, `decision`, `io`, `store`, `end`, `success`, `fork`, `join`, or `state`.
   `end` is any terminal. Use `success` for one that completed successfully, so a
   flow with both outcomes does not paint them the same.
+- `level`: optional `h1` or `h2`. Draws the node larger and heavier so the graph
+  reads as phases rather than one flat cloud. Not available on `fork` or `join`.
 - `ref`: `path:line` for source-backed nodes. Shown in the panel, and opened in the editor when the file is there.
 - `note`: optional short text visible on the node, such as an invariant or unit.
 - `detail`: one or two evidence-backed sentences shown after a click.
@@ -89,6 +91,13 @@ Edges:
 - `kind`: optional `async`, `error`, or `retry`. Tag a loop back to try again as `retry`. The panel walks backwards to find what leads to a step, and only `retry` stops that walk, so an untagged loop lights everything it passes on the way round.
 - `detail`: optional evidence-backed explanation shown after a click.
 - `links`: optional references, as above.
+
+A level is a reading aid, not evidence, and it works only by contrast. Most
+flows use none. Reach for one when a long trace has a few genuine phases a
+reader should land on before the detail: the two or three nodes they would name
+if asked what the flow does, `h1` for those and `h2` for what anchors a branch
+under them. A level on a third of the nodes is the flat cloud again in larger
+type, and the build says so.
 
 Use `fork` and `join` together when all branches run and later converge. Use `decision` when exactly one branch runs. Loops and opposite-direction edges are supported.
 
@@ -104,6 +113,6 @@ assets/build.sh /tmp/YYYY-MM-DD-flow-<slug>.json /tmp/YYYY-MM-DD-flow-<slug>.htm
 
 `<source-root>` is the common root that local refs are relative to, not this skill's directory. Use the working directory when the flow has no local refs. The build writes the page even when checks fail. Fix the JSON and rebuild until the command is silent apart from its output-file summary. Resolve every ref warning when the referenced source exists.
 
-Open the generated HTML. Inspect every tab for unsupported detail, collapsed branches, and tabs too thin to justify their own diagram. Keep the initial view readable. The fit holds a zoom floor rather than shrinking without limit, so a graph too big for the window opens cropped. If it does, narrow the question, split independent flows into tabs, or make one route the subject. A cropped overview is not complete.
+Open the generated HTML. Inspect every tab for unsupported detail, collapsed branches, and tabs too thin to justify their own diagram. Keep the initial view readable. The fit holds a zoom floor rather than shrinking without limit, so a graph too big for the window opens cropped. If it does, narrow the question, split independent flows into tabs, drop a level, or make one route the subject. A cropped overview is not complete.
 
 Done when the build is clean, every tab answers its scoped question, the initial view is readable, and the evidence shown matches the trace. Then ask whether to run the optional full browser check. If they opt in, follow the verify loop in the [`explainer`](../explainer/SKILL.md) skill, section 4. Decide the browser tool up front and confirm it is available, then check desktop and a narrow viewport. Click every node and edge, confirm each highlights its route, every branch into a join, and every entry behind a convergence. Check that the panel fills, walk a branch with the arrow keys, and watch the console.

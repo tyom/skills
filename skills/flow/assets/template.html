@@ -289,12 +289,16 @@
   }
   aside .verdict .mark { margin-right: 6px; color: var(--ok); }
 
+  /* The three quantities a level changes live here as custom properties, so
+     .node.h1 and .node.h2 set them once instead of restating every shape's
+     padding. A kind that wants its own breathing room derives it from --pad-x. */
   .node {
+    --pad-y: 8px; --pad-x: 12px; --size: 14px; --bar: 4px;
     border-radius: 8px; text-align: left; cursor: pointer; transition: opacity .15s;
     background: var(--panel); border: 1px solid var(--line);
-    border-left: 4px solid var(--step);
+    border-left: var(--bar) solid var(--step);
   }
-  .node .body { padding: 8px 12px; }
+  .node .body { padding: var(--pad-y) var(--pad-x); }
   /* A gap between the node and its ring, because --accent is also a kind colour
      — an `io` node is the same blue, and a plain thicker border read as one
      that had been selected. A halo is a shape no kind can imitate. */
@@ -311,7 +315,7 @@
   .react-flow__edge:focus-visible .react-flow__edge-path {
     stroke-width: 4 !important;
   }
-  .node .label { font-weight: 500; }
+  .node .label { font-weight: 500; font-size: var(--size); }
   .node .ref {
     display: flex; margin-top: 2px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -326,7 +330,7 @@
   .node-state {
     border: 1px solid var(--state); border-left-width: 1px; border-radius: 999px;
   }
-  .node-state .body { padding: 8px 22px; text-align: center; }
+  .node-state .body { padding: var(--pad-y) calc(var(--pad-x) + 10px); text-align: center; }
   .node-start { border-left-color: var(--start); }
   /* A decision is a hexagon: the flowchart convention without a diamond's wasted
      width. clip-path cuts any border or shadow, so the outer box *is* the outline
@@ -339,7 +343,7 @@
                        calc(100% - var(--point)) 100%, var(--point) 100%);
   }
   .node-decision .body {
-    padding: 8px 26px;
+    padding: var(--pad-y) calc(var(--pad-x) + 14px);
     background: var(--panel);
     clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
                        calc(100% - var(--point)) 100%, var(--point) 100%);
@@ -383,6 +387,20 @@
   .node-fork.selected, .node-join.selected {
     box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   }
+
+  /* Hierarchy: a second axis over kind. Kind says what a node is, level says
+     how much of the flow it carries, so the two never share a channel — a big
+     decision is still a hexagon in decision orange. Size does the work and the
+     outline follows it, each shape thickening whichever edge it actually has:
+     a box its leading bar, a pill its ring, a hexagon the 1px it wears as one.
+     --point is deliberately left alone, so POINT and insetOf still land an
+     arrowhead on the same faces at every size. A bar has no level; see levelOf. */
+  .node.h2 { --pad-y: 12px; --pad-x: 16px; --size: 18px; --bar: 5px; }
+  .node.h1 { --pad-y: 20px; --pad-x: 26px; --size: 26px; --bar: 8px; }
+  .node-state.h2 { border-width: 2px; }
+  .node-state.h1 { border-width: 4px; }
+  .node-decision.h2 { padding: 2px; }
+  .node-decision.h1 { padding: 4px; }
 
   /* Labels are rendered into React Flow's label layer, above every path, so a
      line crossing the band cannot strike through the text that names it. */
@@ -511,7 +529,12 @@
     return clamp(at, min - edge + reach / 2, max + edge - reach / 2);
   }
 
-  function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
+  // Width grows with the level. Height does not need to: heightOf measures the
+  // real box, so the taller type and padding come back on their own.
+  function widthOf(kind, level) {
+    var base = kind === 'decision' ? 240 : 190;
+    return base + (level === 'h1' ? 140 : level === 'h2' ? 40 : 0);
+  }
 
   // ponytail: estimated from the character count rather than measured. An 11px
   // proportional font puts this a few pixels out, which the gaps absorb.
@@ -537,12 +560,14 @@
 
   function heightOf(n) {
     if (isBar(n.kind)) return 22;
-    var kind = kindOf(n.kind), label = n.label || n.id;
-    var key = [kind, label, n.note || '', n.ref || ''].join('\u0000');
+    var kind = kindOf(n.kind), level = levelOf(n), label = n.label || n.id;
+    // The level is in the key as well as on the class: without it the same
+    // label at two levels shares one entry and the second gets the first's box.
+    var key = [kind, level, label, n.note || '', n.ref || ''].join('\u0000');
     if (measured[key] === undefined) {
       var box = document.createElement('div'), body = document.createElement('div');
-      box.className = 'node node-' + kind;
-      box.style.width = widthOf(kind) + 'px';
+      box.className = 'node node-' + kind + (level ? ' ' + level : '');
+      box.style.width = widthOf(kind, level) + 'px';
       body.className = 'body';
       body.appendChild(bodyLine('label', label));
       if (n.note) body.appendChild(bodyLine('note', n.note));
@@ -576,6 +601,12 @@
   // Unknown kinds fall back to 'step'; build.sh calls one out as a problem.
   function kindOf(kind) { return KINDS.indexOf(kind) === -1 ? 'step' : kind; }
   function isBar(kind) { return kind === 'fork' || kind === 'join'; }
+  // A level a stylesheet has no rule for falls back to the base node, and so
+  // does a level on a bar — a bar is pinned to its height and shows one line.
+  // build.sh calls both out as problems.
+  function levelOf(n) {
+    return !isBar(n.kind) && (n.level === 'h1' || n.level === 'h2') ? n.level : '';
+  }
 
   // Everything an edge kind means, in one row: its legend entry, its colour and
   // its dash. `progress: false` marks a kind that does not carry the flow
@@ -1121,7 +1152,7 @@
     g.setDefaultEdgeLabel(function () { return {}; });
     var down = dir === 'TB';
     nodes.forEach(function (n) {
-      var w = widthOf(n.kind), h = heightOf(n);
+      var w = widthOf(n.kind, levelOf(n)), h = heightOf(n);
       g.setNode(n.id, {
         width: w, height: h, inset: insetOf(n.kind, down ? w : h, down)
       });
@@ -1178,6 +1209,7 @@
             height: isBar(n.kind) ? ht : null,
             label: n.label || n.id,
             kind: kind,
+            level: levelOf(n),
             note: n.note || '',
             ref: n.ref || '',
             detail: n.detail || '',
@@ -1203,7 +1235,8 @@
     var d = props.data;
     var vertical = d.dir === 'TB';
     return h('div', {
-      className: 'node node-' + d.kind + (d.selected ? ' selected' : '') + (d.dim ? ' dim' : ''),
+      className: 'node node-' + d.kind + (d.level ? ' ' + d.level : '') +
+        (d.selected ? ' selected' : '') + (d.dim ? ' dim' : ''),
       style: d.height ? { width: d.width, height: d.height } : { width: d.width }
     },
       h(RF.Handle, {
@@ -1660,7 +1693,7 @@
           data: {
             route: route || null,
             loop: route ? null : {
-              x: widthOf(f.nodeById[e.from].kind) / 2 + 70,
+              x: widthOf(f.nodeById[e.from].kind, levelOf(f.nodeById[e.from])) / 2 + 70,
               y: heightOf(f.nodeById[e.from]) / 2 + 60
             },
             dim: false,
