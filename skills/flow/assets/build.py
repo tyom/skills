@@ -243,7 +243,7 @@ for marker, part in (
     ("__TITLE__", html.escape(data.get("title") or flows[0].get("title") or "Flow")),
     # </script> inside a string would close the data block early.
     ("__FLOW_DATA__", json.dumps({"title": data.get("title", ""), "editor": editor,
-                                  "project": root.name, "hasFileLinks": bool(file_links),
+                                  "hasFileLinks": bool(file_links),
                                   "flows": flows})
                           .replace("</", "<\\/")),
 ):

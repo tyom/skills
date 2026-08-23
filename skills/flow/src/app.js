@@ -474,8 +474,9 @@ import './style.css';
   }
 
   // Every opener the page can build, since the reader may not use the editor the
-  // trace was built on. JetBrains IDEs take a project-relative path and route
-  // through the jetbrains: handler; the rest take the absolute path.
+  // trace was built on. Each takes the absolute path: a JetBrains IDE registers
+  // its own scheme, and the shared jetbrains: one drops any URI for an IDE its
+  // daemon did not launch itself.
   var OPENERS = {
     vscode: { label: 'VS Code', url: fileScheme('vscode') },
     cursor: { label: 'Cursor', url: fileScheme('cursor') },
@@ -483,8 +484,8 @@ import './style.css';
     zed: { label: 'Zed', url: fileScheme('zed') },
     sublime: { label: 'Sublime Text', url: urlQuery('subl') },
     textmate: { label: 'TextMate', url: urlQuery('txmt') },
-    webstorm: { label: 'WebStorm', url: jetbrains('webstorm') },
-    idea: { label: 'IntelliJ IDEA', url: jetbrains('idea') },
+    webstorm: { label: 'WebStorm', url: jetbrainsScheme('webstorm') },
+    idea: { label: 'IntelliJ IDEA', url: jetbrainsScheme('idea') },
     copy: { label: 'Copy path:line', url: null }
   };
 
@@ -505,11 +506,9 @@ import './style.css';
     };
   }
 
-  function jetbrains(tool) {
+  function jetbrainsScheme(scheme) {
     return function (l) {
-      return 'jetbrains://' + tool + '/navigate/reference?project=' +
-        encodeURIComponent(doc.project || '') + '&path=' +
-        encodeURIComponent(l.path + ':' + l.line);
+      return scheme + '://open?file=' + encodePath(l.abs) + '&line=' + l.line;
     };
   }
 
