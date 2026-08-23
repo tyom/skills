@@ -48,7 +48,9 @@ expect("kinds-probe.json", numbers(run("kinds-probe.json")),
 # Window heights, each in the same 50px bucket as what dagre actually laid out
 # in a browser: graphs of 520, 384, 344, 554 and 992px, which need windows of
 # 464, 354, 322, 491 and 844px. Hierarchy is the one the estimate under-reads,
-# by 2%, which is why the answer is rounded up rather than to nearest.
+# by 2%, which is why the answer is rounded up rather than to nearest. A flow
+# with more terminals than any of these has read 4% over, which rounding up
+# cannot help and does not need to.
 expect("kinds-probe heights", re.findall(r"needs (\d+)px", run("kinds-probe.json")),
        ["500", "400", "350", "500", "850"])
 

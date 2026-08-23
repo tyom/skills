@@ -285,8 +285,10 @@ def window_height(flow, m):
     tall += sum(RANKSEP + (LABELH if any(n["id"] in labelled for n in by[r]) else 0)
                 for r in ranks[:-1])
     need = tall * FIT_FLOOR * (1 + FIT_PAD) + HEADER
-    # Rounded up to 50. The estimate ran within 2% of seven laid-out flows, and
-    # rounding up keeps a small under-estimate from reading as "this one fits".
+    # Rounded up to 50. Against ten laid-out flows the estimate ran from 2% under
+    # to 4% over, the drift coming from ranks dagre assigns differently to this
+    # walk. Rounding up keeps an under-estimate from reading as "this one fits",
+    # and leaves the error on the side of asking for a window bigger than needed.
     return int((need + 49) // 50 * 50)
 
 
