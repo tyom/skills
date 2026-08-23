@@ -451,7 +451,16 @@
     .react-flow__panel.canvas-intro { display: block; margin: 0; }
     .panel-head { padding: 16px; }
     .panel-body { padding: 16px 16px 28px; }
-    .edge-legend, .react-flow__minimap { display: none; }
+    .edge-legend { display: none; }
+    /* The fit stops at a readable floor, so a graph wider than the phone is
+       cropped with nothing on screen to say so. The minimap is the only thing
+       that shows the viewport against the whole graph, so it stays: small
+       enough to leave the canvas alone, and with no toggle, since the header
+       has no room and there is no keyboard to press M on. */
+    .react-flow__minimap { width: 108px; height: 78px; }
+    /* The svg carries its full size as an attribute, so the box alone would
+       crop it. The viewBox is already set, so it just scales into the box. */
+    .react-flow__minimap-svg { width: 100%; height: 100%; }
     .react-flow__controls-button { width: 44px; height: 44px; }
   }
 
@@ -1465,6 +1474,9 @@
       function syncTab() {
         setTab(tabFromHash());
         setSel(null);
+        // The badge belongs to the tab that failed, so its popover leaves with
+        // it rather than reappearing on the way back.
+        setShowNote(false);
       }
       addEventListener('hashchange', syncTab);
       return function () { removeEventListener('hashchange', syncTab); };
@@ -1650,12 +1662,10 @@
     function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
 
     // Down walks the flow forward, up walks it back, and left/right cross the
-    // other ways out of the step just left. The route walked is kept, so coming
-    // back down a branch retraces it instead of dropping onto the first way on
-    // every time. Stepping sideways picks a different way on, which unmakes
-    // whatever followed the old one.
-    var trailRef = useRef([]);
-
+    // other ways out of the step above. Each press reads the graph as it stands
+    // rather than a walked route, so down after up lands on the first way on,
+    // not the branch it came up from; left and right are how a reader crosses
+    // back to it.
     useEffect(function () {
       // The sideways axis is whichever one the layout is not running down, so
       // the order left/right moves in is the order the eye reads.
@@ -1717,59 +1727,38 @@
         var right = ev.key === 'ArrowRight', left = ev.key === 'ArrowLeft';
         if (!down && !up && !right && !left) return;
 
-        // Where the walk stands on its own trail. A node reached by clicking is
-        // usually off it, and then the trail starts again from there — except
-        // for a click back onto a step already walked, which picks the walk up
-        // where it was and keeps the route beyond it.
-        var trail = trailRef.current, pick = null;
+        var pick = null;
         var here = sel && sel.kind === 'node' ? sel.id : null;
-        // The last time the trail stood here, not the first: a loop puts the
-        // same step on the trail twice, and the walk is at the later one.
-        var i = here === null ? -1 : trail.lastIndexOf(here);
-        if (here !== null && i === -1) { trail = [here]; i = 0; }
 
         if (down || up) {
           // An edge is already a move between two nodes, so it walks to its own
-          // ends rather than looking for further ones, and starts a trail there.
+          // ends rather than looking for further ones.
           if (!sel) {
-            if (down) { pick = startId; trail = [startId]; }
+            if (down) pick = startId;
           } else if (sel.kind === 'edge') {
             pick = up ? f.edgeById[sel.id].from : f.edgeById[sel.id].to;
-            trail = [pick];
           } else {
             var open = ways(here, up);
             // Nothing above the first step: pressing up there steps off the
             // walk entirely and puts every node back in view.
             if (up && !open.length) {
               ev.preventDefault();
-              trailRef.current = [];
               setSel(null);
               return;
             }
-            // The step this walk took last time it stood here, if it is still
-            // one of the ways on.
-            var kept = up ? (i > 0 ? trail[i - 1] : null) : trail[i + 1];
-            pick = kept && open.indexOf(kept) !== -1 ? kept : open[0];
-            if (pick && pick !== kept) {
-              // A different way on: the trail beyond this step described the old
-              // one. Walking back to an unrecorded parent keeps the route ahead,
-              // since that is still how the walk reached here.
-              trail = up ? [pick].concat(trail.slice(i)) : trail.slice(0, i + 1).concat([pick]);
-            }
+            pick = open[0];
           }
         } else if (here !== null) {
-          // Siblings are the other ways out of the step behind: the one the walk
-          // came from, or failing that whatever leads here. Entries have no
-          // shared parent, so they form their own row.
+          // Siblings are the other ways out of whatever leads here. Entries have
+          // no shared parent, so they form their own row.
           var entry = entryIds.indexOf(here) !== -1;
-          var back = entry ? null : (i > 0 ? trail[i - 1] : ways(here, true)[0]);
+          var back = entry ? null : ways(here, true)[0];
           var row = entry ? entryIds.slice().sort(function (a, b) {
             return placed[a].position[axis] - placed[b].position[axis];
           }) : (back ? ways(back, false) : []);
           var at = row.indexOf(here);
           if (at !== -1 && row.length > 1) {
             pick = row[(at + (right ? 1 : row.length - 1)) % row.length];
-            trail = trail.slice(0, i).concat([pick]);
           }
         }
         if (!pick) return;
@@ -1777,7 +1766,6 @@
         // Only once a key has somewhere to go, so an arrow the walk cannot use
         // still scrolls the page.
         ev.preventDefault();
-        trailRef.current = trail;
         setSel({ kind: 'node', id: pick });
         reveal(pick);
       }
@@ -1787,7 +1775,7 @@
     }, [f, sel, placedNodes, dir, entryIds, startId, rf, showMap]);
 
     // The hash is what says which tab is open; the hashchange listener above
-    // clears the selection, and the relayout effect clears any hand placement.
+    // clears the selection, and the relayout effect refits the new graph.
     function openTab(i) { location.hash = tabIds[i]; }
 
     function runExport(format) {
