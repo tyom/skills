@@ -26,6 +26,10 @@ with the arrow keys. A selection after the join must light all three parallel
 branches. A selection after the shared entry must light both entries. A
 selection after decision reconvergence must keep one route. Watch the console.
 
+Export as SVG and open the file. The page's own stylesheet is inlined into it as
+XML, so a stray `<` in a CSS comment breaks the export and nothing on the page
+itself shows it.
+
 ## Check the checker
 
 The build writes the page even when the graph is broken, and exits 1 so a

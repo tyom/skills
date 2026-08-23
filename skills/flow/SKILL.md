@@ -9,6 +9,7 @@ disable-model-invocation: true
 allowed-tools:
   - WebSearch
   - WebFetch
+  - Write(//tmp/*-flow-*.json)
   - Edit(//tmp/*-flow-*.json)
   - Bash(open /tmp/*-flow-*.html)
 ---
@@ -25,7 +26,7 @@ Use `$ARGUMENTS`; otherwise use the latest subject in the conversation; otherwis
 
 Survey names and structure before tracing. Search the repo even when the subject sounds external. Identify candidate flows from workflow files, screens, entry points, specifications, manuals, or policies.
 
-Read [`subjects.md`](subjects.md) when fit, tab boundaries, or granularity is unclear. It groups good subjects by graph behaviour and routes poor fits elsewhere.
+Read [`subjects.md`](subjects.md) when fit or tab boundaries are unclear. It groups good subjects by graph behaviour and routes poor fits elsewhere.
 
 Continue without asking when there is one clear flow. When there are several, ask one question that names them and recommends a default. Set only what is genuinely open:
 
