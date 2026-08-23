@@ -123,19 +123,29 @@ import './style.css';
   // Closes over nothing, so the minimap's memoised nodes keep their identity.
   function nodeColorOf(n) { return KIND_COLOR[n.data.kind]; }
 
-  // Private to whoever opens the page, and absent in a locked-down browser.
+  // Private to whoever opens the page, and absent in a locked-down browser, so
+  // every read answers with the fallback and every write is allowed to do
+  // nothing. Both settings below go through these rather than guarding again.
   var MAP_KEY = 'flow:minimap';
-  function readToggle(key) {
-    try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
+  function load(key, fallback) {
+    try {
+      var v = localStorage.getItem(key);
+      return v === null ? fallback : v;
+    } catch (e) { return fallback; }
   }
-  function writeToggle(key, on) {
-    try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* no store */ }
+  function save(key, v) {
+    try { localStorage.setItem(key, v); } catch (e) { /* no store */ }
   }
 
-  function fileName(title, ext) {
-    var base = (title || 'flow').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    return (base || 'flow') + '.' + ext;
+  // Lowercase, punctuation to hyphens, no hyphen at either end. Names both the
+  // downloaded file and the hash a tab answers to, which have to agree on what
+  // a title reduces to.
+  function slug(text, fallback) {
+    return (text || fallback).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
   }
+
+  function fileName(title, ext) { return slug(title, 'flow') + '.' + ext; }
 
   function download(blob, name) {
     var url = URL.createObjectURL(blob);
@@ -147,9 +157,9 @@ import './style.css';
 
   function exportBounds(nodes, root) {
     var box = nodes.reduce(function (b, n) {
-      var w = n.width || n.data.width || 0, ht = n.height || n.data.height || 0;
+      // layout() declares both on every node, so there is nothing to fall back to.
       b.x1 = Math.min(b.x1, n.position.x); b.y1 = Math.min(b.y1, n.position.y);
-      b.x2 = Math.max(b.x2, n.position.x + w); b.y2 = Math.max(b.y2, n.position.y + ht);
+      b.x2 = Math.max(b.x2, n.position.x + n.width); b.y2 = Math.max(b.y2, n.position.y + n.height);
       return b;
     }, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
     root.querySelectorAll('.react-flow__edge').forEach(function (edge) {
@@ -288,8 +298,7 @@ import './style.css';
   var usedTabIds = Object.create(null);
   var tabIds = flows.map(function (f, i) {
     var fallback = 'flow-' + (i + 1);
-    var base = (f.title || fallback).toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
+    var base = slug(f.title, fallback);
     // Two flows can share a title, and the hash has to address one tab only.
     var id = base, n = i;
     while (usedTabIds[id]) id = base + '-' + (++n);
@@ -517,10 +526,10 @@ import './style.css';
     cursor: { label: 'Cursor', url: fileScheme('cursor') },
     windsurf: { label: 'Windsurf', url: fileScheme('windsurf') },
     zed: { label: 'Zed', url: fileScheme('zed') },
-    sublime: { label: 'Sublime Text', url: urlQuery('subl') },
-    textmate: { label: 'TextMate', url: urlQuery('txmt') },
-    webstorm: { label: 'WebStorm', url: jetbrainsScheme('webstorm') },
-    idea: { label: 'IntelliJ IDEA', url: jetbrainsScheme('idea') },
+    sublime: { label: 'Sublime Text', url: openQuery('subl', 'url', 'file://') },
+    textmate: { label: 'TextMate', url: openQuery('txmt', 'url', 'file://') },
+    webstorm: { label: 'WebStorm', url: openQuery('webstorm', 'file', '') },
+    idea: { label: 'IntelliJ IDEA', url: openQuery('idea', 'file', '') },
     copy: { label: 'Copy path:line', url: null }
   };
 
@@ -535,24 +544,18 @@ import './style.css';
     return function (l) { return scheme + '://file' + encodePath(l.abs) + ':' + l.line; };
   }
 
-  function urlQuery(scheme) {
+  // Both families open by query string and differ only in what they call the
+  // path: url= wants a file:// URL, JetBrains' file= wants the bare path.
+  function openQuery(scheme, key, prefix) {
     return function (l) {
-      return scheme + '://open?url=file://' + encodePath(l.abs) + '&line=' + l.line;
-    };
-  }
-
-  function jetbrainsScheme(scheme) {
-    return function (l) {
-      return scheme + '://open?file=' + encodePath(l.abs) + '&line=' + l.line;
+      return scheme + '://open?' + key + '=' + prefix + encodePath(l.abs) + '&line=' + l.line;
     };
   }
 
   var EDITOR_KEY = 'flow:editor';
   function readEditor() {
-    try {
-      var saved = localStorage.getItem(EDITOR_KEY);
-      if (saved && OPENERS[saved]) return saved;
-    } catch (e) { /* no store */ }
+    var saved = load(EDITOR_KEY, '');
+    if (OPENERS[saved]) return saved;
     return OPENERS[doc.editor] ? doc.editor : 'vscode';
   }
 
@@ -1025,7 +1028,7 @@ import './style.css';
     var tabState = useState(tabFromHash), tab = tabState[0], setTab = tabState[1];
     var dirState = useState('TB'), dir = dirState[0], setDir = dirState[1];
     var selState = useState(null), sel = selState[0], setSel = selState[1];
-    var mapState = useState(function () { return readToggle(MAP_KEY); });
+    var mapState = useState(function () { return load(MAP_KEY, '1') !== '0'; });
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
     var menuState = useState(false), showMenu = menuState[0], setShowMenu = menuState[1];
@@ -1296,7 +1299,7 @@ import './style.css';
     // Both toggles are reachable from the header and from a key, and neither
     // reading may drift from the other. The button carries its key, so the
     // shortcut is discoverable without a legend of its own.
-    function toggleMap() { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
+    function toggleMap() { save(MAP_KEY, showMap ? '0' : '1'); setShowMap(!showMap); }
     function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
 
     // Down walks the flow forward, up walks it back, and left/right cross the
@@ -1637,7 +1640,7 @@ import './style.css';
       key: 'opener', className: 'opener', value: editor, 'aria-label': 'Open files in',
       onChange: function (ev) {
         setEditor(ev.target.value);
-        try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
+        save(EDITOR_KEY, ev.target.value);
       }
       // The closed control shows a bare editor name; the group heading is what
       // says what picking one does, and it costs no room in the header.

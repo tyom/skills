@@ -19,8 +19,10 @@ def run(src, root=None):
     in this directory or the JSON itself, which is how the fixtures below stay
     in this file rather than becoming assets nobody else uses."""
     with tempfile.TemporaryDirectory() as tmp:
-        path = d / src if isinstance(src, str) and src.endswith(".json") else pathlib.Path(tmp, "f.json")
-        if path.parent == pathlib.Path(tmp):
+        if src.endswith(".json"):
+            path = d / src
+        else:
+            path = pathlib.Path(tmp, "f.json")
             path.write_text(src)
         return subprocess.run([sys.executable, str(d / "build.py"), str(path),
                                f"{tmp}/out.html", str(root or d.parent)],
@@ -41,7 +43,8 @@ def numbers(out):
 # kinds-probe carries the awkward topologies on purpose: two flows with loops,
 # one with several entries. Those are what the cycle break in measure() is for.
 expect("example.json", numbers(run("example.json")), ["V(G) 4, 7 ranks"])
-expect("kinds-probe.json", numbers(run("kinds-probe.json")),
+probe = run("kinds-probe.json")
+expect("kinds-probe.json", numbers(probe),
        ["V(G) 4, 6 ranks", "V(G) 3, 4 ranks", "V(G) 2, 4 ranks",
         "V(G) 4, 6 ranks", "V(G) 5, 8 ranks"])
 
@@ -51,7 +54,7 @@ expect("kinds-probe.json", numbers(run("kinds-probe.json")),
 # by 2%, which is why the answer is rounded up rather than to nearest. A flow
 # with more terminals than any of these has read 4% over, which rounding up
 # cannot help and does not need to.
-expect("kinds-probe heights", re.findall(r"needs (\d+)px", run("kinds-probe.json")),
+expect("kinds-probe heights", re.findall(r"needs (\d+)px", probe),
        ["500", "400", "350", "500", "850"])
 
 # Nothing above sits near the width a label wraps at, so the character estimate
@@ -144,7 +147,8 @@ def body(out):
     return out.split("\n", 1)[1]
 
 
-expect("determinism", len({body(run("kinds-probe.json")) for _ in range(3)}), 1)
+expect("determinism",
+       len({body(probe)} | {body(run("kinds-probe.json")) for _ in range(2)}), 1)
 
 print("measure-check: ok" if not bad else f"measure-check: {bad} failure(s)")
 sys.exit(1 if bad else 0)

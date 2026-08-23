@@ -71,10 +71,9 @@ MAX_VG, MAX_DEPTH = 10, 15
 # between 2% and 39% wider than the nodes alone.
 RANKSEP, LABELH, HEADER = 56, 20, 45
 FIT_FLOOR, FIT_PAD = 0.7, 0.15
-PAD_Y = {None: 8, "h2": 12, "h1": 20}
-PAD_X = {None: 12, "h2": 16, "h1": 26}
-FONT = {None: 14, "h2": 18, "h1": 26}
-DECISION_PAD = {None: 1, "h2": 2, "h1": 4}
+# One row per level, so the four numbers that describe a box stay side by side:
+# --pad-y, --pad-x, --size, and the extra a hexagon's point costs.
+LEVEL = {None: (8, 12, 14, 1), "h2": (12, 16, 18, 2), "h1": (20, 26, 26, 4)}
 # Of the font size. app.js measures a node in the DOM because an arrowhead hides
 # under a box that grew past the rect its route aimed at; nothing here is that
 # tight, so it estimates the way app.js already estimates an edge label.
@@ -102,6 +101,26 @@ def detect_editor():
 file_links = []
 
 
+def resolve_file(root, path, line, noun, where, warnings):
+    """Checks one path against the source root and says how to open it, or None
+    where there is nothing to open. A warned path still reads as what it claimed.
+    Refs and links ask exactly this, so they ask it in one place."""
+    f = (root / path).resolve()
+    # An absolute or ../ path would otherwise be validated against a file outside
+    # the subject, and read as if it belonged to it.
+    inside = f.is_relative_to(root)
+    shown = f"{path}:{line}" if line else path
+    if not inside:
+        warnings.append((f"{noun} escapes source root", f"{where}: {shown}"))
+    elif not f.is_file():
+        warnings.append((f"{noun} file missing", f"{where}: {shown}"))
+    elif line and int(line) > line_count(f):
+        warnings.append((f"{noun} line past end", f"{where}: {shown}"))
+    if not (inside and f.is_file()):
+        return None
+    return {"abs": str(f), "line": int(line) if line else 1}
+
+
 def resolve_links(owner, where, root, warnings):
     """A link is either a web address, taken as written, or a path in the source
     root, turned into an editor URL so it opens where the code is read."""
@@ -121,21 +140,12 @@ def resolve_links(owner, where, root, warnings):
             link.setdefault("label", link["url"])
             continue
         path, line = link["path"], link.get("line")
-        f = (root / path).resolve()
-        inside = f.is_relative_to(root)
-        if not inside:
-            warnings.append(("link escapes source root", f"{where}: {path}"))
-        elif not f.is_file():
-            warnings.append(("link file missing", f"{where}: {path}"))
-        elif line and int(line) > line_count(f):
-            warnings.append(("link line past end", f"{where}: {path}:{line}"))
+        opener = resolve_file(root, path, line, "link", where, warnings)
         link["file"] = f"{path}:{line}" if line else path
         link.setdefault("label", link["file"])
-        # An opener is offered for a file that is there to open. A warned link
-        # still reads in the panel, as the path it claimed.
-        if inside and f.is_file():
-            link["abs"] = str(f)
-            link["line"] = int(line) if line else 1
+        # An opener is offered for a file that is there to open.
+        if opener:
+            link.update(opener)
             file_links.append(link["file"])
 
 
@@ -143,6 +153,19 @@ def resolve_links(owner, where, root, warnings):
 def line_count(f):
     # Bytes, so an undecodable file costs a warning rather than a crash.
     return len(f.read_bytes().splitlines())
+
+
+def reach(seeds, adj, field, skip=None):
+    """Every id a walk from `seeds` arrives at, following `field` of each edge in
+    `adj`. Forwards over `to`, backwards over `from`."""
+    seen, queue = set(), list(seeds)
+    while queue:
+        cur = queue.pop()
+        if cur in seen or cur == skip:
+            continue
+        seen.add(cur)
+        queue += [e[field] for e in adj[cur]]
+    return seen
 
 
 def check(flow, root):
@@ -167,19 +190,10 @@ def check(flow, root):
             path, _, line = ref.rpartition(":")
             if not line.isdigit():
                 path, line = ref, None
-            f = (root / path).resolve()
-            # An absolute or ../ ref would otherwise be validated against a file
-            # outside the subject, and read as if it belonged to it.
-            if not f.is_relative_to(root):
-                warnings.append(("ref escapes source root", f"{nid}: {ref}"))
-            elif not f.is_file():
-                warnings.append(("ref file missing", f"{nid}: {ref}"))
-            elif line and int(line) > line_count(f):
-                warnings.append(("ref line past end", f"{nid}: {ref}"))
             # The panel shows the ref; with a file behind it, it also opens it.
-            if f.is_file() and f.is_relative_to(root):
-                node["refLink"] = {"path": path, "abs": str(f),
-                                   "line": int(line) if line else 1, "file": ref}
+            opener = resolve_file(root, path, line, "ref", nid, warnings)
+            if opener:
+                node["refLink"] = dict(opener, path=path, file=ref)
                 file_links.append(ref)
         resolve_links(node, nid, root, warnings)
         kind = node.get("kind", "step")
@@ -216,13 +230,7 @@ def check(flow, root):
         if by_id.get(e["from"], {}).get("kind") == "decision" and not e.get("label"):
             bad.append(("decision edge unlabelled", where))
 
-    seen, queue = set(), [n["id"] for n in nodes if n.get("kind") == "start"]
-    while queue:
-        cur = queue.pop()
-        if cur in seen:
-            continue
-        seen.add(cur)
-        queue += [e["to"] for e in outgoing[cur]]
+    seen = reach([n["id"] for n in nodes if n.get("kind") == "start"], outgoing, "to")
     bad += [
         ("unreachable from start", f"{n['id']}: {n.get('label', '')}")
         for n in nodes
@@ -231,13 +239,8 @@ def check(flow, root):
 
     # And backwards from the terminals: a loop with no exit is reachable from a
     # start and still traps the reader. Dead ends already reported above.
-    ends, queue = set(), [n["id"] for n in nodes if n.get("kind") in ("end", "success")]
-    while queue:
-        cur = queue.pop()
-        if cur in ends:
-            continue
-        ends.add(cur)
-        queue += [e["from"] for e in incoming[cur]]
+    ends = reach([n["id"] for n in nodes if n.get("kind") in ("end", "success")],
+                 incoming, "from")
     bad += [
         ("no path to an end", f"{n['id']}: {n.get('label', '')}")
         for n in nodes
@@ -254,18 +257,19 @@ def node_height(node):
     kind, level = node.get("kind", "step"), node.get("level")
     if kind in ("fork", "join"):
         return 22
+    pad_y, pad_x, font, point = LEVEL[level]
     # A decision is clipped to a hexagon, so its text sits further in.
-    room = node_width(kind, level) - 2 * (PAD_X[level] + (14 if kind == "decision" else 0))
-    wide, lines, run = CHAR * FONT[level], 1, 0.0
+    room = node_width(kind, level) - 2 * (pad_x + (14 if kind == "decision" else 0))
+    wide, lines, run = CHAR * font, 1, 0.0
     for word in (node.get("label") or node["id"]).split():
         step = len(word) * wide + (wide if run else 0)
         if run and run + step > room:
             lines, run = lines + 1, len(word) * wide
         else:
             run += step
-    return (2 * PAD_Y[level] + lines * round(FONT[level] * 1.5) + BORDER
+    return (2 * pad_y + lines * round(font * 1.5) + BORDER
             + (NOTE_H if node.get("note") else 0) + (REF_H if node.get("ref") else 0)
-            + (DECISION_PAD[level] * 2 if kind == "decision" else 0))
+            + (point * 2 if kind == "decision" else 0))
 
 
 def window_height(flow, m):
@@ -361,23 +365,12 @@ def cuts(flow, m):
     """
     by_id = {n["id"]: n for n in flow["nodes"]}
     edges = [e for e in flow["edges"] if e["from"] in by_id and e["to"] in by_id]
-    onward, into, out_of = collections.defaultdict(list), collections.Counter(), collections.defaultdict(list)
+    into, out_of = collections.Counter(), collections.defaultdict(list)
     for e in edges:
-        onward[e["from"]].append(e["to"])
         into[e["to"]] += 1
         out_of[e["from"]].append(e)
     starts = {n["id"] for n in flow["nodes"] if n.get("kind") == "start"}
     ends = {n["id"] for n in flow["nodes"] if n.get("kind") in ("end", "success")}
-
-    def without(skip):
-        seen, queue = set(), list(starts)
-        while queue:
-            cur = queue.pop()
-            if cur in seen or cur == skip:
-                continue
-            seen.add(cur)
-            queue += onward[cur]
-        return seen
 
     found = []
     for i, node in enumerate(flow["nodes"]):
@@ -388,7 +381,7 @@ def cuts(flow, m):
         # reachable from its second node, and by that test nothing after the bail
         # is ever a seam. What a seam has to own is everything below it.
         below = {n["id"] for n in flow["nodes"] if m["rank"][n["id"]] > m["rank"][nid]}
-        if below & without(nid):
+        if below & reach(starts, out_of, "to", skip=nid):
             continue
         a, b = m["rank"][nid] + 1, m["depth"] - m["rank"][nid]
         # Below three ranks a half is a start wired straight to an end, which is
