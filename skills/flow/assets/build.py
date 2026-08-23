@@ -140,6 +140,10 @@ def resolve_links(owner, where, root, warnings):
             link.setdefault("label", link["url"])
             continue
         path, line = link["path"], link.get("line")
+        # resolve_file counts and opens at this number, so a string or a 0 would
+        # crash the build or open at no line at all.
+        if line is not None and (not isinstance(line, int) or line < 1):
+            sys.exit(f"build.py: {src} needs a positive integer 'line' at {where}.links[{k}]")
         opener = resolve_file(root, path, line, "link", where, warnings)
         link["file"] = f"{path}:{line}" if line else path
         link.setdefault("label", link["file"])
