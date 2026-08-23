@@ -15,7 +15,7 @@ allowed-tools:
 
 # Flow
 
-Trace a flow from evidence and render it as an interactive graph. Every node is a real step or state and every edge is a real transition. Clicking either highlights the path that leads there and shows its detail, so unsupported detail makes the graph misleading.
+Trace a flow from evidence and render it as an interactive graph. Every node is a real step or state and every edge is a real transition. Clicking either highlights what leads there and shows its detail, so unsupported detail makes the graph misleading.
 
 The vendored renderer owns layout and style. Write data, never markup. Route an end-to-end explanation to `/explainer`, an interactive mechanism to `/micro-world`, and a code change to `/explain-diff`.
 
@@ -105,4 +105,4 @@ assets/build.sh /tmp/YYYY-MM-DD-flow-<slug>.json /tmp/YYYY-MM-DD-flow-<slug>.htm
 
 Open the generated HTML. Inspect every tab for unsupported detail, collapsed branches, and tabs too thin to justify their own diagram. Keep the initial view readable. If fitting the whole graph makes labels or targets too small, narrow the question, split independent flows into tabs, or make one route the subject. A shrunken overview is not complete.
 
-Done when the build is clean, every tab answers its scoped question, the initial view is readable, and the evidence shown matches the trace. Then ask whether to run the optional full browser check. If they opt in, follow the verify loop in the [`explainer`](../explainer/SKILL.md) skill, section 4. Decide the browser tool up front and confirm it is available, then check desktop and a narrow viewport. Click every node and edge, confirm each highlights the route that leads there and fills the panel, walk a branch with the arrow keys, and watch the console.
+Done when the build is clean, every tab answers its scoped question, the initial view is readable, and the evidence shown matches the trace. Then ask whether to run the optional full browser check. If they opt in, follow the verify loop in the [`explainer`](../explainer/SKILL.md) skill, section 4. Decide the browser tool up front and confirm it is available, then check desktop and a narrow viewport. Click every node and edge, confirm each highlights its route, every branch into a join, and every entry behind a convergence. Check that the panel fills, walk a branch with the arrow keys, and watch the console.

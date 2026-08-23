@@ -256,6 +256,11 @@
     background: var(--panel); text-align: center;
     font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
   }
+  /* Fan-in has several valid routes, so numbering would invent an order. */
+  aside .steps.fan-in { padding-left: 18px; list-style: disc; }
+  aside .steps.fan-in::before, aside .steps.fan-in li::before,
+  aside .steps.fan-in + .here::before { content: none; }
+  aside .steps.fan-in li::marker { color: var(--muted); }
   aside .steps li:hover, aside .steps li:hover::before,
   aside .nexts li:hover { color: var(--accent); }
   aside .steps .open:focus-visible, aside .steps .ref:focus-visible,
@@ -288,11 +293,10 @@
   aside .verdict .mark { margin-right: 6px; color: var(--ok); }
 
   .node {
-    border-radius: 8px; text-align: left; cursor: grab; transition: opacity .15s;
+    border-radius: 8px; text-align: left; cursor: pointer; transition: opacity .15s;
     background: var(--panel); border: 1px solid var(--line);
     border-left: 4px solid var(--step);
   }
-  .node:active { cursor: grabbing; }
   .node .body { padding: 8px 12px; }
   /* A gap between the node and its ring, because --accent is also a kind colour
      — an `io` node is the same blue, and a plain thicker border read as one
@@ -343,7 +347,23 @@
     clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
                        calc(100% - var(--point)) 100%, var(--point) 100%);
   }
-  .node-decision.selected { background: var(--accent); padding: 2px; box-shadow: none; }
+  /* The halo cannot hang off the node: clip-path cuts anything a clipped element
+     paints outside its own hexagon, pseudo-elements included. So the ring is
+     drawn on the wrapper React Flow puts around every node, one hexagon per
+     layer, and the node keeps its 1px outline — nothing moves on selection. */
+  .node-decision.selected { background: var(--accent); }
+  .react-flow__node:has(> .node-decision.selected)::before,
+  .react-flow__node:has(> .node-decision.selected)::after {
+    content: ''; position: absolute;
+    clip-path: polygon(0 50%, var(--halo-point) 0, calc(100% - var(--halo-point)) 0,
+                       100% 50%, calc(100% - var(--halo-point)) 100%, var(--halo-point) 100%);
+  }
+  .react-flow__node:has(> .node-decision.selected)::before {
+    inset: -4px; --halo-point: 22px; background: var(--accent); z-index: -2;
+  }
+  .react-flow__node:has(> .node-decision.selected)::after {
+    inset: -2px; --halo-point: 20px; background: var(--bg); z-index: -1;
+  }
   .node-io { border-left-color: var(--io); }
   .node-store { border-left-color: var(--store); border-radius: 8px 8px 16px 16px; }
   .node-end { border-left-color: var(--end); }
@@ -389,7 +409,14 @@
 
   @media (max-width: 720px) {
     header { gap: 6px; padding: 0 10px; min-height: 56px; }
-    header .tabs { min-width: 0; overflow-x: auto; }
+    header .tabs {
+      min-width: 0; overflow-x: auto; scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+    header .tabs::-webkit-scrollbar { height: 3px; }
+    header .tabs::-webkit-scrollbar-thumb {
+      background: var(--accent); border-radius: 3px;
+    }
     header .tab { flex: none; min-height: 44px; }
     header button:not(.tab) { min-height: 44px; }
     header .minimap-toggle { display: none; }
@@ -466,7 +493,17 @@
 
   // Shared so the load fit and every relayout fit agree; the two drifting apart
   // frames the graph differently depending on how you got there.
-  var FIT = { padding: 0.15 };
+  var FIT = { padding: 0.15, minZoom: 0.7 };
+
+  // Where to point the canvas when the fit stops at the readable floor and the
+  // graph runs off the edge. Centring on the step in hand is right until that
+  // step is near an end of the flow, where it leaves half the canvas empty; the
+  // centre is held far enough in for the viewport to stay over the graph.
+  function held(at, min, max, span) {
+    var reach = span / FIT.minZoom, edge = reach * FIT.padding;
+    if (max - min + edge * 2 <= reach) return (min + max) / 2;
+    return Math.min(Math.max(at, min - edge + reach / 2), max + edge - reach / 2);
+  }
 
   function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
 
@@ -543,7 +580,7 @@
     '': { label: 'Flow' },
     async: { label: 'Async', dash: '7 5' },
     retry: { label: 'Retry', color: KIND_COLOR.decision, dash: '2 5', progress: false },
-    error: { label: 'Error', color: KIND_COLOR.end }
+    error: { label: 'Error', color: KIND_COLOR.end, dash: '10 4 2 4' }
   };
   function edgeKind(kind) { return EDGE_KINDS[kind] || EDGE_KINDS['']; }
 
@@ -729,15 +766,11 @@
   function unique(a) { return Array.from(new Set(a)); }
 
   // --- what leads here ------------------------------------------------------
-  // One route in, not every route. A flow that loops has ancestors on all sides
-  // of a node — after an aspect change the crop editor comes back round into the
-  // step that computes the frame — and lighting the whole ancestor set paints
-  // the loop as though it led here. So the walk back records the edge each
-  // ancestor was found through, then follows those edges forward again from a
-  // single origin. Breadth-first, so the route it keeps is the shortest one. An
-  // edge kind that does not carry the flow forward is not crossed; see
-  // EDGE_KINDS.
-  function upstream(f, nodeId) {
+  // The shortest route keeps ordinary decision reconvergence legible. Fan-in
+  // expands later: every branch into a join, and every branch that comes from a
+  // different entry, is also added. An edge kind that does not carry the flow
+  // forward is not crossed; see EDGE_KINDS.
+  function shortestRoute(f, nodeId) {
     var seen = Object.create(null), via = Object.create(null);
     var queue = [nodeId], far = nodeId, start = null;
     seen[nodeId] = true;
@@ -765,7 +798,84 @@
       if (at === nodeId) break;
       edges[via[at].id] = true;
     }
-    return { edges: edges, dist: dist };
+    return { edges: edges, dist: dist, via: via };
+  }
+
+  function upstream(f, nodeId) {
+    var edges = Object.create(null);
+    var pending = [nodeId], examined = Object.create(null);
+    var originCache = Object.create(null);
+    var fanIn = false;
+
+    // Entries behind a branch say whether a convergence joins separate ways in
+    // or merely reunites alternatives from the same decision.
+    function origins(id) {
+      if (originCache[id]) return originCache[id];
+      var found = Object.create(null), seen = Object.create(null), queue = [id];
+      while (queue.length) {
+        var cur = queue.shift();
+        if (seen[cur]) continue;
+        seen[cur] = true;
+        var incoming = (f.incoming[cur] || []).filter(function (e) {
+          return edgeKind(e.kind).progress !== false && e.from !== cur;
+        });
+        if (kindOf((f.nodeById[cur] || {}).kind) === 'start' || !incoming.length) {
+          found[cur] = true;
+        } else {
+          incoming.forEach(function (e) { queue.push(e.from); });
+        }
+      }
+      return (originCache[id] = Object.keys(found).sort());
+    }
+
+    function expand(id) {
+      var incoming = (f.incoming[id] || []).filter(function (e) {
+        return edgeKind(e.kind).progress !== false && e.from !== id;
+      });
+      if (incoming.length < 2) return [];
+      if (kindOf((f.nodeById[id] || {}).kind) === 'join') return incoming;
+      var sets = incoming.map(function (e) { return origins(e.from).join('\u0000'); });
+      var entries = unique([].concat.apply([], incoming.map(function (e) {
+        return origins(e.from);
+      })));
+      return entries.length > 1 && unique(sets).length > 1 ? incoming : [];
+    }
+
+    while (pending.length) {
+      var target = pending.shift(), route = shortestRoute(f, target);
+      Object.keys(route.edges).forEach(function (id) { edges[id] = true; });
+
+      Object.keys(route.dist).concat([target]).forEach(function (id) {
+        if (examined[id]) return;
+        examined[id] = true;
+        var branches = expand(id);
+        if (branches.length > 1) fanIn = true;
+        branches.forEach(function (e) {
+          edges[e.id] = true;
+          pending.push(e.from);
+        });
+      });
+    }
+
+    // Distances order the panel from the furthest entry to the selection. A
+    // node with several selected ways out has no single branch label.
+    var dist = Object.create(null), via = Object.create(null), queue = [nodeId];
+    dist[nodeId] = 0;
+    while (queue.length) {
+      var cur = queue.shift();
+      (f.incoming[cur] || []).forEach(function (e) {
+        if (!edges[e.id] || dist[e.from] !== undefined) return;
+        dist[e.from] = dist[cur] + 1;
+        queue.push(e.from);
+      });
+    }
+    Object.keys(dist).forEach(function (id) {
+      var ways = (f.outgoing[id] || []).filter(function (e) {
+        return edges[e.id] && dist[e.to] !== undefined && dist[e.to] < dist[id];
+      });
+      if (ways.length === 1) via[id] = ways[0];
+    });
+    return { edges: edges, dist: dist, via: via, fanIn: fanIn };
   }
 
   // Furthest hop first, so the list reads start-to-here.
@@ -786,7 +896,8 @@
     return a && b && a.kind === 'state' && b.kind === 'state' ? 'transition' : 'edge';
   }
 
-  function leadIn(n) {
+  function leadIn(n, fanIn) {
+    if (fanIn) return n === 1 ? '1 upstream step' : n + ' upstream steps';
     return n === 1 ? '1 step leads here' : n + ' steps lead here';
   }
 
@@ -948,6 +1059,19 @@
   // moved onto that face, inset far enough to clear the rounding.
   var INSET = 16;
 
+  // Tracks .node-decision's --point: the hexagon's flat run starts one point in
+  // from each end, and the corner before it is not a face at all.
+  var POINT = 18;
+
+  // How far along a face a line is allowed to meet it. A rectangle keeps clear
+  // of its rounded corners. A hexagon has no face at its corners: laid out
+  // top-down its flat run starts a point in, and laid out left to right its side
+  // is a single vertex, so every line meets the middle of it.
+  function insetOf(kind, across, vertical) {
+    if (kindOf(kind) === 'decision') return vertical ? POINT + 8 : across / 2;
+    return across / 4 < INSET ? across / 4 : INSET;
+  }
+
   function snapEnds(pts, src, tgt, vertical) {
     var out = pts.slice();
     out[0] = onFace(src, out[1], vertical);
@@ -961,7 +1085,7 @@
     // the face's own axis, which the point slides along, inset from the corners.
     var run = vertical ? 'y' : 'x', across = vertical ? 'x' : 'y';
     var half = { x: node.width / 2, y: node.height / 2 };
-    var inset = Math.min(INSET, half[across] / 2);
+    var inset = Math.min(node.inset, half[across]);
     var p = {};
     p[run] = node[run] + (toward[run] < node[run] ? -1 : 1) * half[run];
     p[across] = clamp(toward[across], node[across] - half[across] + inset,
@@ -973,10 +1097,14 @@
     // A multigraph, so two edges between the same pair stay two edges — they get
     // their own route and their own label slot instead of sharing one.
     var g = new dagre.graphlib.Graph({ multigraph: true });
-    g.setGraph({ rankdir: dir, nodesep: 52, ranksep: 96, marginx: 24, marginy: 24 });
+    g.setGraph({ rankdir: dir, nodesep: 44, ranksep: 56, marginx: 24, marginy: 24 });
     g.setDefaultEdgeLabel(function () { return {}; });
+    var down = dir === 'TB';
     nodes.forEach(function (n) {
-      g.setNode(n.id, { width: widthOf(n.kind), height: heightOf(n) });
+      var w = widthOf(n.kind), h = heightOf(n);
+      g.setNode(n.id, {
+        width: w, height: h, inset: insetOf(n.kind, down ? w : h, down)
+      });
     });
     // dagre would route a self-edge too, but squared off like any other. It is
     // held back and drawn as an arc instead; see loopPath.
@@ -1000,6 +1128,8 @@
     var hops = hopsPerEdge(geom, vertical);
     geom.forEach(function (gm) {
       routes[gm.id] = {
+        // Kept so an end can be redrawn short of a selected node; see backOff.
+        pts: gm.pts, hops: hops[gm.id],
         // Drawn once here, not per render: a route only moves when the layout does.
         path: routePath(gm.pts, hops[gm.id]),
         // dagre puts the label slot on the route, so the line runs under the
@@ -1091,6 +1221,11 @@
     var bow = (vertical ? props.sourceX : props.sourceY) + LOOPGAP;
     var from = vertical ? props.sourceY : props.sourceX;
     var to = vertical ? props.targetY : props.targetX;
+    // Both ends sit on the node's own face, so a selected node's ring covers
+    // them the same way it covers a routed edge; see backOff.
+    var off = props.data.standoff ? (from > to ? STANDOFF : -STANDOFF) : 0;
+    from += off;
+    to -= off;
     function at(b, r) { return vertical ? b + ' ' + r : r + ' ' + b; }
     return {
       path: 'M' + at(bow, from) + ' C' + at(bow + out, from + 26) +
@@ -1233,6 +1368,37 @@
     return { x: from.x + (to.x - from.x) * by / len, y: from.y + (to.y - from.y) * by / len };
   }
 
+  // A selected node wears a ring 4px off its face, and a line drawn to the face
+  // runs under it — an arrowhead lands inside the ring. So the ends that meet
+  // the selection, and only those, stop short of it. Every other line stays
+  // attached. A selected edge keeps the same final run without moving its end.
+  var STANDOFF = 7, ARROW_RUN = 14;
+
+  function backOff(route, atSource, atTarget, selectedEdge) {
+    if (!route || !route.pts) return route;
+    var pts = route.pts.slice(), last = pts.length - 1;
+    // Each end's neighbour lies out in the gap between the ranks, so a step
+    // towards it is a step off the face.
+    if (atSource) pts[0] = towards(pts[0], pts[1], STANDOFF);
+    if (atTarget) pts[last] = towards(pts[last], pts[last - 1], STANDOFF);
+    if (atTarget || selectedEdge) {
+      // Keep enough straight line after the last bend for the arrowhead. Move
+      // the whole cross-run so the route stays orthogonal.
+      if (last > 2) {
+        var end = pts[last], turn = pts[last - 1], lane = pts[last - 2];
+        var axis = turn.x === end.x ? 'y' : 'x';
+        var run = Math.abs(end[axis] - turn[axis]);
+        var extra = Math.max(0, CORNER + ARROW_RUN - run);
+        var shift = (end[axis] > turn[axis] ? -1 : 1) * extra;
+        pts[last - 1] = Object.assign({}, turn);
+        pts[last - 2] = Object.assign({}, lane);
+        pts[last - 1][axis] += shift;
+        pts[last - 2][axis] += shift;
+      }
+    }
+    return Object.assign({}, route, { path: routePath(pts, route.hops) });
+  }
+
   function FlowEdge(props) {
     var d = props.data || {};
     // A routed edge carries the geometry dagre laid out; a self-loop, which is
@@ -1251,8 +1417,6 @@
   function useDismiss(open, setOpen, ref) {
     useEffect(function () {
       if (!open) return;
-      var first = ref.current && ref.current.querySelector('[role="menu"] button');
-      if (first) first.focus();
       // The check badge leaves with a switch to a clean tab, and takes its
       // popover with it, so the box can be gone while the flag is still up.
       function close(ev) {
@@ -1350,6 +1514,7 @@
       if (sel.kind === 'edge') {
         var e = f.edgeById[sel.id];
         up.edges[e.id] = true;
+        up.via[e.from] = e;
         // Lit, but not a step that leads here: it is where this edge arrives.
         if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
       }
@@ -1371,7 +1536,30 @@
     // a canvas that changed size: a phone rotating, or the panel taking its turn.
     var rf = RF.useReactFlow();
     var pane = RF.useStore(function (s) { return s.width + 'x' + s.height; });
-    useEffect(function () { rf.fitView(FIT); }, [f, dir, rf, pane]);
+    function fitReadable(whole) {
+      // Turning the layout is the question of whether the flow reads better the
+      // other way round, so that fit answers with all of it, however small it
+      // lands. Every other fit keeps the floor.
+      if (whole) { rf.fitView({ padding: FIT.padding }); return; }
+      var focusId = sel && sel.kind === 'node' ? sel.id :
+        sel && f.edgeById[sel.id] ? f.edgeById[sel.id].from : startId;
+      var focus = placedNodes.find(function (n) { return n.id === focusId; });
+      Promise.resolve(rf.fitView(FIT)).then(function () {
+        if (!focus || rf.getZoom() > FIT.minZoom + 0.001) return;
+        var box = rf.getNodesBounds(placedNodes), size = pane.split('x');
+        rf.setCenter(
+          held(focus.position.x + focus.width / 2, box.x, box.x + box.width, +size[0]),
+          held(focus.position.y + focus.height / 2, box.y, box.y + box.height, +size[1]),
+          { zoom: FIT.minZoom }
+        );
+      });
+    }
+    var lastDir = useRef(dir);
+    useEffect(function () {
+      var turned = lastDir.current !== dir;
+      lastDir.current = dir;
+      fitReadable(turned);
+    }, [f, dir, rf, pane, placedNodes, startId]);
 
     var selectEdge = useCallback(function (id) {
       setSel({ kind: 'edge', id: id });
@@ -1385,7 +1573,8 @@
         var kind = edgeKind(e.kind), route = routes[e.id];
         return {
           id: e.id, source: e.from, target: e.to, label: e.label || undefined,
-          ariaLabel: (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
+          ariaLabel: (e.kind ? edgeKind(e.kind).label + ' ' : '') +
+            (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
             ' to ' + labelOf(f, e.to) + '. Select to inspect this ' + wordFor(f, e) + '.',
           sourceHandle: 'sout', targetHandle: 'tin',
           type: 'flow',
@@ -1427,8 +1616,14 @@
         // reach it. Weight says which is which.
         var picked = sel.kind === 'edge' && sel.id === b.id;
         var stroke = b.color || (on ? ACCENT : MUTED);
+        var onNode = sel.kind === 'node';
         return Object.assign({}, b, {
-          data: Object.assign({}, b.data, { dim: !on }),
+          data: Object.assign({}, b.data, {
+            dim: !on,
+            route: backOff(b.data.route, onNode && sel.id === b.source,
+                                         onNode && sel.id === b.target, picked),
+            standoff: onNode && sel.id === b.source
+          }),
           className: on ? undefined : 'dim',
           style: Object.assign({}, b.style, {
             stroke: stroke, strokeWidth: picked ? 3.5 : (on ? 2 : 1.5)
@@ -1604,12 +1799,9 @@
       });
     }
 
-    // Which way this step went. Only lit edges count, so it names the branch
-    // actually taken; a graph that re-converges names both.
+    // Which way this step went on the one route traced into the selection.
     function branchOut(id) {
-      return unique((f.outgoing[id] || [])
-        .filter(function (e) { return lit.edges[e.id] && e.label; })
-        .map(function (e) { return e.label; })).join(' / ');
+      return lit.via[id] && lit.via[id].label || '';
     }
 
     // One row of a list: the step itself, and the file it lives in.
@@ -1636,8 +1828,10 @@
       return h('nav', { className: 'slice' },
         ids.length
           ? h(React.Fragment, null,
-              h('div', { className: 'trail-label' }, leadIn(ids.length)),
-              h('ol', { className: 'steps' }, ids.map(function (id) {
+              h('div', { className: 'trail-label' }, leadIn(ids.length, lit.fanIn)),
+              h(lit.fanIn ? 'ul' : 'ol', {
+                className: 'steps' + (lit.fanIn ? ' fan-in' : '')
+              }, ids.map(function (id) {
                 return stepRow(id, id, branchOut(id));
               })))
           : h('p', { className: 'hint' }, 'Nothing leads here. This is a starting point.'),
@@ -1750,7 +1944,7 @@
     // Each control is built once and rendered twice: inline on a wide header,
     // and inside the ☰ menu on a narrow one. Only one set is ever visible.
     var dirButton = h('button', {
-      key: 'dir',
+      key: 'dir', autoFocus: showMenu,
       onClick: function () { toggleDir(); setShowMenu(false); }
     }, (dir === 'TB' ? 'Left to right' : 'Top to bottom'), kbd('L'));
     var minimapButton = h('button', {
@@ -1768,8 +1962,11 @@
       return h('option', { key: key, value: key }, OPENERS[key].label);
     })) : null;
     var exportItems = [
-      h('button', { key: 'svg', role: 'menuitem', onClick: function () { runExport('svg'); } }, 'Export as SVG'),
-      h('button', { key: 'png', role: 'menuitem', onClick: function () { runExport('png'); } }, 'Export as PNG'),
+      h('button', {
+        key: 'svg', autoFocus: showExport,
+        onClick: function () { runExport('svg'); }
+      }, 'Export as SVG'),
+      h('button', { key: 'png', onClick: function () { runExport('png'); } }, 'Export as PNG'),
       h('label', { key: 'bg' },
         h('input', {
           type: 'checkbox', checked: exportBg,
@@ -1779,10 +1976,10 @@
     ];
     var checkLabel = f.problems.length
       ? f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : '')
-      : 'Trace valid';
+      : 'Structure valid';
     var checkText = f.problems.length
       ? f.problems.join('\n')
-      : 'Trace valid: ' + f.nodeList.length + ' nodes checked at build time — ids ' +
+      : 'Structure valid: ' + f.nodeList.length + ' nodes checked at build time. IDs ' +
         'unique, kinds known, every edge resolves, every decision branches, ' +
         'every path reaches an end.';
 
@@ -1806,11 +2003,14 @@
           dirButton, minimapButton, openerSelect,
           h('div', { className: 'export', ref: exportRef },
             h('button', {
-              'aria-haspopup': 'menu', 'aria-expanded': showExport,
+              'aria-expanded': showExport, 'aria-controls': 'export-options',
               onClick: function () { setShowExport(!showExport); }
             }, 'Export ↓'),
             showExport
-              ? h('div', { className: 'export-menu', role: 'menu' }, exportItems)
+              ? h('div', {
+                  id: 'export-options', className: 'export-menu', role: 'group',
+                  'aria-label': 'Export options'
+                }, exportItems)
               : null
           )
         ),
@@ -1818,11 +2018,14 @@
         h('div', { className: 'burger-wrap', ref: menuRef },
           h('button', {
             className: 'burger', 'aria-label': 'Menu',
-            'aria-haspopup': 'menu', 'aria-expanded': showMenu,
+            'aria-expanded': showMenu, 'aria-controls': 'flow-options',
             onClick: function () { setShowMenu(!showMenu); }
           }, '☰'),
           showMenu
-            ? h('div', { className: 'export-menu', role: 'menu' },
+            ? h('div', {
+                id: 'flow-options', className: 'export-menu', role: 'group',
+                'aria-label': 'Flow options'
+              },
                 dirButton, openerSelect, exportItems)
             : null
         ),
@@ -1874,7 +2077,9 @@
             h(RF.Panel, { position: 'top-right', className: 'canvas-tools' },
               h('div', {
                 className: 'edge-legend', role: 'list', 'aria-label': 'Edge legend'
-              }, Object.keys(EDGE_KINDS).map(function (key) {
+              }, unique(f.edgeItems.map(function (e) {
+                return e.kind && EDGE_KINDS[e.kind] ? e.kind : '';
+              })).map(function (key) {
                 var item = EDGE_KINDS[key];
                 return h('span', { className: 'legend-item', role: 'listitem', key: key },
                   h('svg', { className: 'legend-line', viewBox: '0 0 26 8', 'aria-hidden': 'true' },
