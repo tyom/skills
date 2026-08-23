@@ -1266,10 +1266,11 @@ import './style.css';
     function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
 
     // Down walks the flow forward, up walks it back, and left/right cross the
-    // other ways out of the step above. Each press reads the graph as it stands
-    // rather than a walked route, so down after up lands on the first way on,
-    // not the branch it came up from; left and right are how a reader crosses
-    // back to it.
+    // other ways out of the step above. Down reads the graph as it stands, so
+    // down after up lands on the first way on, not the branch it came up from;
+    // left and right are how a reader crosses back to it. Up is the one that
+    // follows the route already lit, since that route is what the diagram and
+    // the panel both say leads here.
     useEffect(function () {
       // The sideways axis is whichever one the layout is not running down, so
       // the order left/right moves in is the order the eye reads.
@@ -1284,6 +1285,18 @@ import './style.css';
         return unique(edges.map(function (e) { return back ? e.from : e.to; }))
           .filter(function (other) { return other !== id; })
           .sort(byAxis);
+      }
+
+      // The way in that is lit: the branch a reader came down, tapped onto, or
+      // the declared first where they did neither. A join has several, so the
+      // step actually walked from wins over the rest.
+      function cameFrom(id, open) {
+        if (!lit) return null;
+        var on = open.filter(function (p) {
+          return lit.via[p] && lit.via[p].to === id;
+        });
+        var trail = walk.current.trail, was = trail[trail.length - 2];
+        return on.indexOf(was) !== -1 ? was : on[0] || null;
       }
 
       // A step walked to off-screen leaves the panel describing something the
@@ -1347,7 +1360,7 @@ import './style.css';
               setSel(null);
               return;
             }
-            pick = open[0];
+            pick = (up && cameFrom(here, open)) || open[0];
           }
         } else if (here !== null) {
           // Siblings are the other ways out of whatever leads here. Entries have
@@ -1372,7 +1385,7 @@ import './style.css';
 
       addEventListener('keydown', onKey);
       return function () { removeEventListener('keydown', onKey); };
-    }, [f, sel, placed, dir, entryIds, startId, rf, showMap]);
+    }, [f, sel, lit, placed, dir, entryIds, startId, rf, showMap]);
 
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect refits the new graph.
