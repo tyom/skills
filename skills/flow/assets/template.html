@@ -15,6 +15,9 @@
     --success: #059669; --join: var(--fork);
     --ok: var(--success); --bad: var(--end);
     --shadow: rgb(0 0 0 / 14%);
+    /* --line is a border against a panel and disappears as a standalone
+       rule; the spine has to carry the eye down five items. */
+    --spine: color-mix(in srgb, var(--muted) 40%, transparent);
   }
   /* The dark palette, written once. The page wears this class to follow the
      system; the canvas wears it on its own so it can be dark while the page is
@@ -122,7 +125,6 @@
     border: 1px solid currentColor; background: none; cursor: help;
     align-self: center; white-space: nowrap;
   }
-  header .badge:hover { border-color: currentColor; }
   .badge.bad { color: var(--bad); }
   /* The tick is the whole badge once the words no longer fit. */
   .badge .mark { display: none; }
@@ -213,12 +215,9 @@
   }
   aside .steps::before {
     content: ''; position: absolute; left: 7px; top: 4px; bottom: 4px;
-    width: 1px;
-    /* --line is a border against a panel and disappears as a standalone rule;
-       the spine has to carry the eye down five items. */
-    background: color-mix(in srgb, var(--muted) 40%, transparent);
+    width: 1px; background: var(--spine);
   }
-  aside .steps li, aside .nexts li { position: relative; padding: 4px 0 10px; }
+  aside .slice li { position: relative; padding: 4px 0 10px; }
   aside .nexts { margin: 9px 0 0; padding: 0 0 0 26px; list-style: none; }
   /* The ways on are a bullet list, not an order: no numbers, and the bullets sit
      on the spine so they read as the fork below this step. */
@@ -237,7 +236,7 @@
   /* The spine stops at the last step above; this carries it into the marker. */
   aside .steps + .here::before {
     content: ''; position: absolute; left: 7px; top: -6px; height: 22px; width: 1px;
-    background: color-mix(in srgb, var(--muted) 40%, transparent);
+    background: var(--spine);
   }
   aside .here::after {
     content: ''; position: absolute; left: 3px; top: 11px;
@@ -246,7 +245,7 @@
   }
   /* Two things to do with a step, so two controls: open it, or open its file.
      A link inside a button would be neither. */
-  aside .steps .open, aside .nexts .open {
+  aside .slice .open {
     display: block; width: 100%; padding: 0; text-align: left;
     font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
   }
@@ -261,19 +260,17 @@
   aside .steps.fan-in::before, aside .steps.fan-in li::before,
   aside .steps.fan-in + .here::before { content: none; }
   aside .steps.fan-in li::marker { color: var(--muted); }
-  aside .steps li:hover, aside .steps li:hover::before,
-  aside .nexts li:hover { color: var(--accent); }
-  aside .steps .open:focus-visible, aside .steps .ref:focus-visible,
-  aside .nexts .open:focus-visible, aside .nexts .ref:focus-visible {
+  aside .slice li:hover, aside .steps li:hover::before { color: var(--accent); }
+  aside .slice .open:focus-visible, aside .slice .ref:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
   }
-  aside .steps .branch, aside .nexts .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
-  aside .steps .ref, aside .nexts .ref {
+  aside .slice .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
+  aside .slice .ref {
     display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     text-decoration: none;
   }
-  aside .steps a.ref:hover, aside .nexts a.ref:hover { color: var(--accent); text-decoration: underline; }
+  aside .slice a.ref:hover { color: var(--accent); text-decoration: underline; }
 
   /* The badge is loud about a broken trace, so its explanation cannot whisper. */
   aside .problems {
@@ -511,7 +508,7 @@
   function held(at, min, max, span) {
     var reach = span / FIT.minZoom, edge = reach * FIT.padding;
     if (max - min + edge * 2 <= reach) return (min + max) / 2;
-    return Math.min(Math.max(at, min - edge + reach / 2), max + edge - reach / 2);
+    return clamp(at, min - edge + reach / 2, max + edge - reach / 2);
   }
 
   function widthOf(kind) { return kind === 'decision' ? 240 : 190; }
@@ -777,18 +774,26 @@
   function unique(a) { return Array.from(new Set(a)); }
 
   // --- what leads here ------------------------------------------------------
+  // The ways into a node that a backward walk may cross: an edge kind that does
+  // not carry the flow forward is not one (see EDGE_KINDS), and neither is a
+  // self-edge, which arrives where the walk already stands.
+  function waysIn(f, id) {
+    return (f.incoming[id] || []).filter(function (e) {
+      return edgeKind(e.kind).progress !== false && e.from !== id;
+    });
+  }
+
   // The shortest route keeps ordinary decision reconvergence legible. Fan-in
   // expands later: every branch into a join, and every branch that comes from a
-  // different entry, is also added. An edge kind that does not carry the flow
-  // forward is not crossed; see EDGE_KINDS.
+  // different entry, is also added.
   function shortestRoute(f, nodeId) {
     var seen = Object.create(null), via = Object.create(null);
     var queue = [nodeId], far = nodeId, start = null;
     seen[nodeId] = true;
     while (queue.length) {
       var cur = queue.shift();
-      (f.incoming[cur] || []).forEach(function (e) {
-        if (edgeKind(e.kind).progress === false || seen[e.from]) return;
+      waysIn(f, cur).forEach(function (e) {
+        if (seen[e.from]) return;
         seen[e.from] = true;
         via[e.from] = e;
         queue.push(e.from);
@@ -801,15 +806,13 @@
 
     // via[x] is the edge out of x towards nodeId, so following it always closes
     // the distance and the walk forward cannot circle.
-    var edges = Object.create(null), dist = Object.create(null), hops = 0;
-    var origin = start || far, at;
-    for (at = origin; at !== nodeId; at = via[at].to) hops++;
-    for (at = origin; ; at = via[at].to) {
-      dist[at] = hops--;
+    var edges = Object.create(null), nodes = Object.create(null), at;
+    for (at = start || far; ; at = via[at].to) {
+      nodes[at] = true;
       if (at === nodeId) break;
       edges[via[at].id] = true;
     }
-    return { edges: edges, dist: dist, via: via };
+    return { edges: edges, nodes: nodes };
   }
 
   function upstream(f, nodeId) {
@@ -827,9 +830,7 @@
         var cur = queue.shift();
         if (seen[cur]) continue;
         seen[cur] = true;
-        var incoming = (f.incoming[cur] || []).filter(function (e) {
-          return edgeKind(e.kind).progress !== false && e.from !== cur;
-        });
+        var incoming = waysIn(f, cur);
         if (kindOf((f.nodeById[cur] || {}).kind) === 'start' || !incoming.length) {
           found[cur] = true;
         } else {
@@ -840,23 +841,20 @@
     }
 
     function expand(id) {
-      var incoming = (f.incoming[id] || []).filter(function (e) {
-        return edgeKind(e.kind).progress !== false && e.from !== id;
-      });
+      var incoming = waysIn(f, id);
       if (incoming.length < 2) return [];
       if (kindOf((f.nodeById[id] || {}).kind) === 'join') return incoming;
-      var sets = incoming.map(function (e) { return origins(e.from).join('\u0000'); });
-      var entries = unique([].concat.apply([], incoming.map(function (e) {
-        return origins(e.from);
-      })));
-      return entries.length > 1 && unique(sets).length > 1 ? incoming : [];
+      var sets = incoming.map(function (e) { return origins(e.from); });
+      var entries = unique([].concat.apply([], sets));
+      var distinct = unique(sets.map(function (s) { return s.join('\u0000'); }));
+      return entries.length > 1 && distinct.length > 1 ? incoming : [];
     }
 
     while (pending.length) {
       var target = pending.shift(), route = shortestRoute(f, target);
       Object.keys(route.edges).forEach(function (id) { edges[id] = true; });
 
-      Object.keys(route.dist).concat([target]).forEach(function (id) {
+      Object.keys(route.nodes).forEach(function (id) {
         if (examined[id]) return;
         examined[id] = true;
         var branches = expand(id);
@@ -1387,25 +1385,26 @@
 
   function backOff(route, atSource, atTarget, selectedEdge) {
     if (!route || !route.pts) return route;
+    // Most edges touch nothing selected, so redrawing their path would hand
+    // back the same string off a fresh object and cost them their identity.
+    if (!atSource && !atTarget && !selectedEdge) return route;
     var pts = route.pts.slice(), last = pts.length - 1;
     // Each end's neighbour lies out in the gap between the ranks, so a step
     // towards it is a step off the face.
     if (atSource) pts[0] = towards(pts[0], pts[1], STANDOFF);
     if (atTarget) pts[last] = towards(pts[last], pts[last - 1], STANDOFF);
-    if (atTarget || selectedEdge) {
-      // Keep enough straight line after the last bend for the arrowhead. Move
-      // the whole cross-run so the route stays orthogonal.
-      if (last > 2) {
-        var end = pts[last], turn = pts[last - 1], lane = pts[last - 2];
-        var axis = turn.x === end.x ? 'y' : 'x';
-        var run = Math.abs(end[axis] - turn[axis]);
-        var extra = Math.max(0, CORNER + ARROW_RUN - run);
-        var shift = (end[axis] > turn[axis] ? -1 : 1) * extra;
-        pts[last - 1] = Object.assign({}, turn);
-        pts[last - 2] = Object.assign({}, lane);
-        pts[last - 1][axis] += shift;
-        pts[last - 2][axis] += shift;
-      }
+    // Keep enough straight line after the last bend for the arrowhead. Move the
+    // whole cross-run so the route stays orthogonal.
+    if ((atTarget || selectedEdge) && last > 2) {
+      var end = pts[last], turn = pts[last - 1], lane = pts[last - 2];
+      var axis = turn.x === end.x ? 'y' : 'x';
+      var run = Math.abs(end[axis] - turn[axis]);
+      var extra = Math.max(0, CORNER + ARROW_RUN - run);
+      var shift = (end[axis] > turn[axis] ? -1 : 1) * extra;
+      pts[last - 1] = Object.assign({}, turn);
+      pts[last - 2] = Object.assign({}, lane);
+      pts[last - 1][axis] += shift;
+      pts[last - 2][axis] += shift;
     }
     return Object.assign({}, route, { path: routePath(pts, route.hops) });
   }
@@ -1488,14 +1487,20 @@
 
     var laidOut = useMemo(function () { return layout(f.nodeList, f.edgeItems, dir); }, [f, dir]);
     var placedNodes = laidOut.nodes, routes = laidOut.routes;
+    // The highlight, the fit and the keyboard walk all want a node by id, and
+    // only the layout knows where it stands, so they share one index.
+    var placed = useMemo(function () {
+      return placedNodes.reduce(function (m, n) {
+        m[n.id] = n;
+        return m;
+      }, Object.create(null));
+    }, [placedNodes]);
 
     // Selecting anything asks the same question: what leads here?
     var lit = useMemo(function () {
       if (!sel) return null;
-      var at = placedNodes.reduce(function (m, n) {
-        m[n.id] = dir === 'TB' ? n.position.y : n.position.x;
-        return m;
-      }, Object.create(null));
+      // How far down the flow a node stands: the axis the layout runs on.
+      var along = dir === 'TB' ? 'y' : 'x';
       var id = sel.kind === 'node' ? sel.id : f.edgeById[sel.id].from;
       var up = upstream(f, id);
 
@@ -1510,7 +1515,8 @@
       // so the other ways into the node it leaves are no part of the answer.
       if (sel.kind === 'node') {
         (f.incoming[id] || []).forEach(function (e) {
-          if (at[e.from] < at[e.to] && up.dist[e.from] === undefined) up.dist[e.from] = -1;
+          if (placed[e.from].position[along] < placed[e.to].position[along] &&
+              up.dist[e.from] === undefined) up.dist[e.from] = -1;
         });
       }
       // Then every edge between two lit nodes, in either direction. Which nodes
@@ -1533,7 +1539,7 @@
         if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
       }
       return up;
-    }, [f, sel, placedNodes, dir]);
+    }, [f, sel, placed, dir]);
 
     var nodes = useMemo(function () {
       return placedNodes.map(function (n) {
@@ -1549,7 +1555,8 @@
     // Relayout moves every node, so the old viewport frames nothing, and so does
     // a canvas that changed size: a phone rotating, or the panel taking its turn.
     var rf = RF.useReactFlow();
-    var pane = RF.useStore(function (s) { return s.width + 'x' + s.height; });
+    var paneW = RF.useStore(function (s) { return s.width; });
+    var paneH = RF.useStore(function (s) { return s.height; });
     function fitReadable(whole, animate) {
       var duration = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 0;
       // Turning the layout is the question of whether the flow reads better the
@@ -1558,13 +1565,13 @@
       if (whole) { rf.fitView({ padding: FIT.padding, duration: duration }); return; }
       var focusId = sel && sel.kind === 'node' ? sel.id :
         sel && f.edgeById[sel.id] ? f.edgeById[sel.id].from : startId;
-      var focus = placedNodes.find(function (n) { return n.id === focusId; });
+      var focus = placed[focusId];
       Promise.resolve(rf.fitView(Object.assign({}, FIT, { duration: duration }))).then(function () {
         if (!focus || rf.getZoom() > FIT.minZoom + 0.001) return;
-        var box = rf.getNodesBounds(placedNodes), size = pane.split('x');
+        var box = rf.getNodesBounds(placedNodes);
         rf.setCenter(
-          held(focus.position.x + focus.width / 2, box.x, box.x + box.width, +size[0]),
-          held(focus.position.y + focus.height / 2, box.y, box.y + box.height, +size[1]),
+          held(focus.position.x + focus.width / 2, box.x, box.x + box.width, paneW),
+          held(focus.position.y + focus.height / 2, box.y, box.y + box.height, paneH),
           { zoom: FIT.minZoom, duration: duration }
         );
       });
@@ -1574,7 +1581,7 @@
       var turned = lastDir.current !== dir;
       lastDir.current = dir;
       fitReadable(turned);
-    }, [f, dir, rf, pane, placedNodes, startId]);
+    }, [f, dir, rf, paneW, paneH, placedNodes, startId]);
 
     var selectEdge = useCallback(function (id) {
       setSel({ kind: 'edge', id: id });
@@ -1588,7 +1595,7 @@
         var kind = edgeKind(e.kind), route = routes[e.id];
         return {
           id: e.id, source: e.from, target: e.to, label: e.label || undefined,
-          ariaLabel: (e.kind ? edgeKind(e.kind).label + ' ' : '') +
+          ariaLabel: (e.kind ? kind.label + ' ' : '') +
             (e.label ? e.label + ': ' : '') + labelOf(f, e.from) +
             ' to ' + labelOf(f, e.to) + '. Select to inspect this ' + wordFor(f, e) + '.',
           sourceHandle: 'sout', targetHandle: 'tin',
@@ -1632,12 +1639,13 @@
         var picked = sel.kind === 'edge' && sel.id === b.id;
         var stroke = b.color || (on ? ACCENT : MUTED);
         var onNode = sel.kind === 'node';
+        var fromSel = onNode && sel.id === b.source;
         return Object.assign({}, b, {
           data: Object.assign({}, b.data, {
             dim: !on,
-            route: backOff(b.data.route, onNode && sel.id === b.source,
-                                         onNode && sel.id === b.target, picked),
-            standoff: onNode && sel.id === b.source
+            route: backOff(b.data.route, fromSel,
+                           onNode && sel.id === b.target, picked),
+            standoff: fromSel
           }),
           className: on ? undefined : 'dim',
           style: Object.assign({}, b.style, {
@@ -1670,19 +1678,16 @@
       // The sideways axis is whichever one the layout is not running down, so
       // the order left/right moves in is the order the eye reads.
       var axis = dir === 'TB' ? 'x' : 'y';
-      var placed = placedNodes.reduce(function (m, n) {
-        m[n.id] = n;
-        return m;
-      }, Object.create(null));
+      function byAxis(a, b) {
+        return placed[a].position[axis] - placed[b].position[axis];
+      }
 
       // A self-edge is not a way on: it arrives where the walk already stands.
       function ways(id, back) {
         var edges = (back ? f.incoming[id] : f.outgoing[id]) || [];
         return unique(edges.map(function (e) { return back ? e.from : e.to; }))
           .filter(function (other) { return other !== id; })
-          .sort(function (a, b) {
-            return placed[a].position[axis] - placed[b].position[axis];
-          });
+          .sort(byAxis);
       }
 
       // A step walked to off-screen leaves the panel describing something the
@@ -1753,9 +1758,8 @@
           // no shared parent, so they form their own row.
           var entry = entryIds.indexOf(here) !== -1;
           var back = entry ? null : ways(here, true)[0];
-          var row = entry ? entryIds.slice().sort(function (a, b) {
-            return placed[a].position[axis] - placed[b].position[axis];
-          }) : (back ? ways(back, false) : []);
+          var row = entry ? entryIds.slice().sort(byAxis)
+            : (back ? ways(back, false) : []);
           var at = row.indexOf(here);
           if (at !== -1 && row.length > 1) {
             pick = row[(at + (right ? 1 : row.length - 1)) % row.length];
@@ -1772,7 +1776,7 @@
 
       addEventListener('keydown', onKey);
       return function () { removeEventListener('keydown', onKey); };
-    }, [f, sel, placedNodes, dir, entryIds, startId, rf, showMap]);
+    }, [f, sel, placed, dir, entryIds, startId, rf, showMap]);
 
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect refits the new graph.
@@ -1965,9 +1969,9 @@
         }),
         'Background')
     ];
-    var checkLabel = f.problems.length
-      ? f.problems.length + ' problem' + (f.problems.length > 1 ? 's' : '')
-      : 'Structure valid';
+    // Only a failing check reaches the badge, so this always counts problems.
+    var checkLabel = f.problems.length +
+      ' problem' + (f.problems.length > 1 ? 's' : '');
     var checkText = f.problems.length
       ? f.problems.join('\n')
       : 'Structure valid: ' + f.nodeList.length + ' nodes checked at build time. IDs ' +
