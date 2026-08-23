@@ -1,0 +1,15 @@
+{
+  "name": "@tyom/flow-ui",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "type": "module",
+  "scripts": {
+    "build": "bun build --compile --target=browser --production src/template.html --outdir assets"
+  },
+  "devDependencies": {
+    "@dagrejs/dagre": "1.1.5",
+    "@xyflow/react": "12.11.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

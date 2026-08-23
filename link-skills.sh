@@ -66,21 +66,38 @@ unlink_one() {
   else row "=" "$D" skipped "$n (not ours)"; fi
 }
 
+# ~/.claude/skills → "claude"; shown only when the dirs disagree about a skill.
+dir_label() { local p; p=$(basename "$(dirname "$1")"); echo "${p#.}"; }
+short() { echo "${1/#$HOME/\~}"; }
+
+# One row per skill across all dirs; ABSENT_PAIRS collects "dir name" to link.
 cmd_status() {
-  printf '%s%s%s → %s%s%s\n\n' "$B" "$REPO_SKILLS" "$R" "$D" "$GLOBAL" "$R"
-  local n st absent=()
+  local d n i st sts same hs=""
+  for d in "${SKILL_DIRS[@]}"; do hs="${hs:+$hs, }$(short "$d")"; done
+  printf '%s%s%s → %s%s%s\n\n' "$B" "$REPO_SKILLS" "$R" "$D" "$hs" "$R"
+
+  ABSENT_PAIRS=(); ABSENT_COUNT=0
   for n in $(repo_skills); do
-    st=$(state_of "$n"); render "$st" "$n"
-    [ "$st" = absent ] && absent+=("$n")
+    sts=()
+    for d in "${SKILL_DIRS[@]}"; do
+      GLOBAL="$d"; st=$(state_of "$n"); sts+=("$st")
+      [ "$st" = absent ] && ABSENT_PAIRS+=("$d $n")
+    done
+    same=1; i=1
+    while [ $i -lt ${#sts[@]} ]; do
+      [ "${sts[$i]}" = "${sts[0]}" ] || same=0; i=$((i + 1))
+    done
+    if [ $same -eq 1 ]; then
+      render "${sts[0]}" "$n"
+    else
+      i=0
+      while [ $i -lt ${#sts[@]} ]; do
+        render "${sts[$i]}" "$n $D($(dir_label "${SKILL_DIRS[$i]}"))$R"; i=$((i + 1))
+      done
+    fi
+    case " ${sts[*]} " in *" absent "*) ABSENT_COUNT=$((ABSENT_COUNT + 1)) ;; esac
   done
   echo
-  [ ${#absent[@]} -eq 0 ] && return 0
-  if [ -t 0 ]; then
-    printf 'Link %d absent skill(s)? [y/N] ' "${#absent[@]}"; read -r reply
-    case $reply in [yY]*) cmd_link "${absent[@]}" ;; esac
-  else
-    echo "Run '$0 link' to symlink the ${#absent[@]} absent skill(s)."
-  fi
 }
 
 cmd_link() {
@@ -117,7 +134,26 @@ cmd_selftest() {
 
 cmd="${1:-status}"; [ $# -gt 0 ] && shift
 case "$cmd" in
-  status|link|unlink)
+  status)
+    cmd_status
+    [ "$ABSENT_COUNT" -eq 0 ] && exit 0
+    if [ ! -t 0 ]; then
+      echo "Run '$0 link' to symlink the $ABSENT_COUNT absent skill(s)."; exit 0
+    fi
+    printf 'Link %d absent skill(s)? [y/N] ' "$ABSENT_COUNT"; read -r reply
+    case $reply in
+      [yY]*)
+        for GLOBAL in "${SKILL_DIRS[@]}"; do
+          names=""
+          for pair in "${ABSENT_PAIRS[@]}"; do
+            [ "${pair% *}" = "$GLOBAL" ] && names="$names ${pair##* }"
+          done
+          [ -n "$names" ] || continue
+          printf '\n%s%s%s\n' "$D" "$(short "$GLOBAL")" "$R"
+          cmd_link $names  # unquoted: split on spaces
+        done ;;
+    esac ;;
+  link|unlink)
     for GLOBAL in "${SKILL_DIRS[@]}"; do "cmd_$cmd" "$@"; done ;;
   selftest) cmd_selftest ;;
   *) echo "usage: $0 [status | link [-f] [names...] | unlink [names...]]" >&2; exit 2 ;;

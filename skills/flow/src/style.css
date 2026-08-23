@@ -1,0 +1,478 @@
+  :root, .canvas-light {
+    --bg: #f6f7f9; --panel: #fff; --ink: #14171a; --muted: #6b7280;
+    --line: #e3e6ea; --accent: #2563eb;
+    --start: #059669; --step: #64748b; --decision: #d97706;
+    --io: #2563eb; --store: #7c3aed; --end: #dc2626; --fork: #0d9488; --state: #db2777;
+    --success: #059669; --join: var(--fork);
+    --ok: var(--success); --bad: var(--end);
+    --shadow: rgb(0 0 0 / 14%);
+    /* --line is a border against a panel and disappears as a standalone
+       rule; the spine has to carry the eye down five items. */
+    --spine: color-mix(in srgb, var(--muted) 40%, transparent);
+  }
+  /* The dark palette, written once. The page wears this class to follow the
+     system; the canvas wears it on its own so it can be dark while the page is
+     light, and an exported sheet carries it with it. */
+  .canvas-dark {
+    --bg: #0f1216; --panel: #171b21; --ink: #e8eaed; --muted: #9aa3ad;
+    --line: #2a3038; --accent: #60a5fa;
+    --start: #34d399; --step: #94a3b8; --decision: #fbbf24;
+    --io: #60a5fa; --store: #a78bfa; --end: #f87171; --fork: #2dd4bf; --state: #f472b6;
+    --success: #34d399; --shadow: rgb(0 0 0 / 50%);
+  }
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #root { display: flex; flex-direction: column; }
+
+  header {
+    display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap;
+    padding: 0 16px; min-height: 45px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  /* The title occupies the tab rail for a single diagram; with several diagrams,
+     the rail becomes the navigation and keeps the controls on the right. */
+  header .tabs { display: flex; gap: 2px; flex: 1; min-width: 120px; }
+  .flow-title {
+    align-self: center; margin: 0; overflow: hidden; color: var(--ink);
+    font-size: 14px; font-weight: 600; line-height: 1.25;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  header button {
+    font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
+    align-self: center; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  header button:hover { border-color: var(--accent); }
+  /* The shortcut rides at the end of the label, quiet enough to read past. */
+  header button kbd {
+    font: inherit; font-size: 10px; margin-left: 6px; padding: 1px 4px;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 4px;
+  }
+  button:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px;
+  }
+  .export { position: relative; display: flex; align-self: center; }
+  /* The native chevron centres on the text line, not the button, so it hangs
+     low inside a custom border: turn it off and paint one that sits straight. */
+  header .opener {
+    appearance: none; align-self: center; font: inherit; font-size: 12px;
+    padding: 4px 22px 4px 8px; color: var(--ink); cursor: pointer;
+    background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%23808893' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 7px center / 9px;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  header .opener:hover { border-color: var(--accent); }
+  /* Copying is the opener of last resort, so it wears the link it replaces. */
+  .as-link {
+    padding: 0; font: inherit; color: var(--accent); background: none;
+    border: 0; cursor: pointer; text-align: left;
+  }
+  .as-link:hover { text-decoration: underline; }
+  aside .steps .as-link { color: var(--muted); }
+  aside .steps .as-link:hover { color: var(--accent); }
+  .export-menu {
+    position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
+    min-width: 142px; padding: 4px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 7px;
+    box-shadow: 0 8px 24px var(--shadow);
+  }
+  header .export-menu button {
+    display: block; width: 100%; padding: 6px 8px; text-align: left;
+    background: none; border: 0;
+  }
+  header .export-menu button:hover { background: var(--bg); }
+  .export-menu label {
+    display: flex; align-items: center; gap: 7px; padding: 6px 8px;
+    margin-top: 4px; border-top: 1px solid var(--line); cursor: pointer;
+  }
+  /* A tab is navigation, not an option: no box, and its indicator sits down on
+     the header's own bottom rule so the strip reads as the edge of the canvas. */
+  header .tab {
+    align-self: stretch; margin-bottom: -1px; padding: 0 11px;
+    font-size: 14px; color: var(--muted); background: none;
+    border: none; border-bottom: 2px solid transparent; border-radius: 0;
+  }
+  header .tab:hover { color: var(--ink); border-color: var(--line); }
+  header .tab.on { color: var(--ink); font-weight: 500; border-bottom-color: var(--accent); }
+  .edge-legend {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+    max-width: calc(100% - 30px); padding: 7px 9px;
+    color: var(--muted); background: var(--panel); border-radius: 6px;
+    font-size: 11px; white-space: nowrap; pointer-events: none;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-line { width: 26px; height: 8px; flex: none; overflow: visible; }
+  header .controls { display: contents; }
+  .check, .burger-wrap { position: relative; display: flex; align-self: center; }
+  .burger-wrap { display: none; }
+  header .burger { font-size: 15px; line-height: 1; padding: 6px 9px; }
+  header .export-menu .opener { display: block; width: 100%; margin: 4px 0 0; }
+  header .badge {
+    font-size: 12px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid currentColor; background: none; cursor: help;
+    align-self: center; white-space: nowrap;
+  }
+  .badge.bad { color: var(--bad); }
+  /* The tick is the whole badge once the words no longer fit. */
+  .badge .mark { display: none; }
+  .check-note {
+    position: absolute; z-index: 20; top: calc(100% + 5px); right: 0;
+    width: max-content; max-width: min(260px, 74vw); padding: 8px 10px;
+    color: var(--ink); background: var(--panel); font-size: 12px;
+    white-space: pre-line; border: 1px solid var(--line); border-radius: 7px;
+    box-shadow: 0 8px 24px var(--shadow);
+  }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  /* Both, not just the background: colour inherits as a resolved value, so
+     text under a flipped canvas has to pick up the palette here. */
+  .canvas { flex: 1; min-width: 0; background: var(--bg); color: var(--ink); }
+  .canvas-tools { display: flex; align-items: stretch; gap: 6px; }
+  .canvas-theme {
+    padding: 7px 9px; color: var(--muted); background: var(--panel);
+    border: 0; border-radius: 6px; font: inherit; font-size: 11px;
+    line-height: 1; cursor: pointer;
+  }
+  .canvas-theme:hover { color: var(--ink); }
+
+  aside {
+    width: clamp(288px, 27vw, 380px); flex: none; display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel); border-left: 1px solid var(--line);
+  }
+  .mobile-back { display: none; }
+  .react-flow__panel.canvas-intro { display: none; }
+  /* What the panel is about holds still; only the evidence for it scrolls. */
+  .panel-head { flex: none; padding: 20px 20px 16px; border-bottom: 1px solid var(--line); }
+  .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 17px 20px 28px; }
+
+  aside h2 {
+    margin: 0; font-size: 22px; line-height: 1.2; font-weight: 600;
+    letter-spacing: -.02em; overflow-wrap: anywhere;
+  }
+  /* One dense line under the title carrying every secondary fact: what kind of
+     thing this is, and where it lives. Nothing above the heading. */
+  aside .meta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+    margin-top: 8px; font-size: 12px; line-height: 1.45; color: var(--muted);
+  }
+  aside .meta .sep { opacity: .45; }
+  aside .meta code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; overflow-wrap: anywhere;
+  }
+  aside .meta a { color: var(--accent); text-decoration: none; }
+  aside .meta a:hover { text-decoration: underline; }
+  aside .tag { display: inline-flex; align-items: center; gap: 5px; }
+  aside .tag .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+  aside .note { margin: 0 0 10px; font-size: 15px; font-style: italic; color: var(--muted); }
+  aside .detail { margin: 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+  /* A summary or a detail may run to several paragraphs; each is its own <p>. */
+  aside .detail + .detail { margin-top: 11px; }
+  aside .hint { margin: 16px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+
+  /* Where to read more: a web address, or a file opened in the editor. */
+  aside p.trail-label { margin: 22px 0 0; }
+  aside .links { margin: 7px 0 0; padding: 0; list-style: none; }
+  /* One reference reads as a sentence; several read as a list. */
+  aside .links.many { padding-left: 17px; list-style: disc; }
+  aside .links.many li::marker { color: var(--muted); }
+  aside .links li { margin: 7px 0 0; font-size: 14px; line-height: 1.45; }
+  aside .links li:first-child { margin-top: 0; }
+  aside .links a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+  aside .links a:hover { text-decoration: underline; }
+  aside .links .ref {
+    display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* One vertical slice of the diagram: what led here, this step, then every way
+     on. A single spine down the left runs through all three, so the panel reads
+     as a column of the flow rather than two lists of links. */
+  aside .slice { margin-top: 26px; padding-top: 15px; border-top: 1px solid var(--line); }
+  aside .trail-label { font-size: 12px; color: var(--muted); }
+  aside .trail-label.out { margin-top: 15px; }
+  aside .slice .hint { margin: 0; font-size: 13px; }
+  aside .slice .hint.out { margin-top: 15px; }
+  /* A spine through the numbers: this is one path in order, not a bag of links.
+     Each number sits on the panel colour and masks the line behind it. */
+  aside .steps {
+    position: relative; margin: 12px 0 0; padding: 0 0 0 26px;
+    list-style: none; counter-reset: step;
+  }
+  aside .steps::before {
+    content: ''; position: absolute; left: 7px; top: 4px; bottom: 4px;
+    width: 1px; background: var(--spine);
+  }
+  aside .slice li { position: relative; padding: 4px 0 10px; }
+  aside .nexts { margin: 9px 0 0; padding: 0 0 0 26px; list-style: none; }
+  /* The ways on are a bullet list, not an order: no numbers, and the bullets sit
+     on the spine so they read as the fork below this step. */
+  aside .nexts li::before {
+    content: ''; position: absolute; left: -21px; top: 12px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: color-mix(in srgb, var(--muted) 70%, transparent);
+  }
+  aside .nexts li:hover::before { background: var(--accent); }
+  /* The step the panel is about, on the spine between the two lists. It repeats
+     the title on purpose: it is what both lists are relative to. */
+  aside .here {
+    position: relative; margin: 2px 0 0; padding: 7px 0 7px 26px;
+    font-size: 15px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere;
+  }
+  /* The spine stops at the last step above; this carries it into the marker. */
+  aside .steps + .here::before {
+    content: ''; position: absolute; left: 7px; top: -6px; height: 22px; width: 1px;
+    background: var(--spine);
+  }
+  aside .here::after {
+    content: ''; position: absolute; left: 3px; top: 11px;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 3px var(--panel);
+  }
+  /* Two things to do with a step, so two controls: open it, or open its file.
+     A link inside a button would be neither. */
+  aside .slice .open {
+    display: block; width: 100%; padding: 0; text-align: left;
+    font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+  }
+  aside .steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: -26px; top: 4px; width: 15px; padding: 2px 0;
+    background: var(--panel); text-align: center;
+    font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  /* Fan-in has several valid routes, so numbering would invent an order. */
+  aside .steps.fan-in { padding-left: 18px; list-style: disc; }
+  aside .steps.fan-in::before, aside .steps.fan-in li::before,
+  aside .steps.fan-in + .here::before { content: none; }
+  aside .steps.fan-in li::marker { color: var(--muted); }
+  aside .slice li:hover, aside .steps li:hover::before { color: var(--accent); }
+  aside .slice .open:focus-visible, aside .slice .ref:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
+  }
+  aside .slice .branch { margin-left: 6px; font-size: 12px; color: var(--decision); }
+  aside .slice .ref {
+    display: block; margin-top: 1px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-decoration: none;
+  }
+  aside .slice a.ref:hover { color: var(--accent); text-decoration: underline; }
+
+  /* The badge is loud about a broken trace, so its explanation cannot whisper. */
+  aside .problems {
+    margin: 20px 0 0; padding: 11px 13px 11px 28px; border-radius: 8px;
+    font-size: 14px; color: var(--bad); border: 1px solid var(--bad);
+    background: color-mix(in srgb, var(--bad) 9%, transparent);
+  }
+  aside .problems li { margin: 3px 0; }
+  /* The same box as a problem, in the colour of a pass and quieter with it:
+     enough edge to be found, not enough to compete with the diagram. */
+  aside .verdict {
+    margin: 20px 0 0; padding: 9px 12px; border-radius: 8px;
+    font-size: 13px; line-height: 1.5; color: var(--muted);
+    border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+    background: color-mix(in srgb, var(--ok) 7%, transparent);
+  }
+  aside .verdict .mark { margin-right: 6px; color: var(--ok); }
+
+  /* The three quantities a level changes live here as custom properties, so
+     .node.h1 and .node.h2 set them once instead of restating every shape's
+     padding. A kind that wants its own breathing room derives it from --pad-x. */
+  .node {
+    --pad-y: 8px; --pad-x: 12px; --size: 14px; --bar: 4px;
+    border-radius: 8px; text-align: left; cursor: pointer; transition: opacity .15s;
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: var(--bar) solid var(--step);
+  }
+  .node .body { padding: var(--pad-y) var(--pad-x); }
+  /* A gap between the node and its ring, because --accent is also a kind colour
+     — an `io` node is the same blue, and a plain thicker border read as one
+     that had been selected. A halo is a shape no kind can imitate. */
+  .node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
+  .node.dim { opacity: .22; }
+  .react-flow__edge { transition: opacity .15s; }
+  .react-flow__edge.dim { opacity: .1; }
+  .react-flow__node:focus-visible .node {
+    outline: 3px solid var(--accent); outline-offset: 4px;
+  }
+  .react-flow__edge:focus-visible .react-flow__edge-path {
+    stroke-width: 4 !important;
+  }
+  .node .label { font-weight: 500; font-size: var(--size); }
+  .node .ref {
+    display: flex; margin-top: 2px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* The line number holds its width; the name is the only thing that can give. */
+  .node .ref .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node .ref .line { flex: none; }
+  .node .note { margin-top: 2px; font-size: 12px; font-style: italic; color: var(--muted); }
+  /* A state is a pill: rounded all the way, no leading bar, label centred —
+     the UML rounded rectangle, which reads as "a place to be" rather than
+     "a thing that happens". */
+  .node-state {
+    border: 1px solid var(--state); border-left-width: 1px; border-radius: 999px;
+  }
+  .node-state .body { padding: var(--pad-y) calc(var(--pad-x) + 10px); text-align: center; }
+  .node-start { border-left-color: var(--start); }
+  /* A decision is a hexagon: the flowchart convention without a diamond's wasted
+     width. clip-path cuts any border or shadow, so the outer box *is* the outline
+     and the inner body sits 1px inside it. Handles stay on the clipped edges. */
+  .node-decision {
+    --point: 18px;
+    border: none; border-radius: 0; padding: 1px;
+    background: var(--decision);
+    clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
+                       calc(100% - var(--point)) 100%, var(--point) 100%);
+  }
+  .node-decision .body {
+    padding: var(--pad-y) calc(var(--pad-x) + 14px);
+    background: var(--panel);
+    clip-path: polygon(0 50%, var(--point) 0, calc(100% - var(--point)) 0, 100% 50%,
+                       calc(100% - var(--point)) 100%, var(--point) 100%);
+  }
+  /* The halo cannot hang off the node: clip-path cuts anything a clipped element
+     paints outside its own hexagon, pseudo-elements included. So the ring is
+     drawn on the wrapper React Flow puts around every node, one hexagon per
+     layer, and the node keeps its 1px outline — nothing moves on selection. */
+  .node-decision.selected { background: var(--accent); }
+  .react-flow__node:has(> .node-decision.selected)::before,
+  .react-flow__node:has(> .node-decision.selected)::after {
+    content: ''; position: absolute;
+    clip-path: polygon(0 50%, var(--halo-point) 0, calc(100% - var(--halo-point)) 0,
+                       100% 50%, calc(100% - var(--halo-point)) 100%, var(--halo-point) 100%);
+  }
+  .react-flow__node:has(> .node-decision.selected)::before {
+    inset: -4px; --halo-point: 22px; background: var(--accent); z-index: -2;
+  }
+  .react-flow__node:has(> .node-decision.selected)::after {
+    inset: -2px; --halo-point: 20px; background: var(--bg); z-index: -1;
+  }
+  .node-io { border-left-color: var(--io); }
+  .node-store { border-left-color: var(--store); border-radius: 8px 8px 16px 16px; }
+  .node-end { border-left-color: var(--end); }
+  .node-success { border-left-color: var(--success); }
+  /* A fork or join is a bar, not a box: "all of these happen" reads at a glance
+     where a fourth box colour would not. */
+  .node-fork, .node-join {
+    border: none; border-radius: 3px; background: var(--fork);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .node-fork .body, .node-join .body {
+    padding: 0 10px; font-size: 11px; font-weight: 700; color: var(--panel);
+    letter-spacing: .06em; text-transform: uppercase;
+    overflow: hidden; white-space: nowrap;
+  }
+  .node-fork .label, .node-join .label { overflow: hidden; text-overflow: ellipsis; }
+  /* A bar is pinned to its height, so only the label fits. The note and the ref
+     are still there — they read in the panel. */
+  .node-fork .ref, .node-join .ref, .node-fork .note, .node-join .note { display: none; }
+  .node-fork.selected, .node-join.selected {
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
+
+  /* Hierarchy: a second axis over kind. Kind says what a node is, level says
+     how much of the flow it carries, so the two never share a channel — a big
+     decision is still a hexagon in decision orange. Size does the work and the
+     outline follows it, each shape thickening whichever edge it actually has:
+     a box its leading bar, a pill its ring, a hexagon the 1px it wears as one.
+     --point is deliberately left alone, so POINT and insetOf still land an
+     arrowhead on the same faces at every size. A bar has no level; see levelOf. */
+  .node.h2 { --pad-y: 12px; --pad-x: 16px; --size: 18px; --bar: 5px; }
+  .node.h1 { --pad-y: 20px; --pad-x: 26px; --size: 26px; --bar: 8px; }
+  .node-state.h2 { border-width: 2px; }
+  .node-state.h1 { border-width: 4px; }
+  .node-decision.h2 { padding: 2px; }
+  .node-decision.h1 { padding: 4px; }
+
+  /* Labels are rendered into React Flow's label layer, above every path, so a
+     line crossing the band cannot strike through the text that names it. */
+  .edge-label {
+    position: absolute;
+    font-size: 11px; line-height: 1.4; color: var(--muted);
+    background: var(--bg); padding: 0 4px; border-radius: 3px;
+    white-space: nowrap; cursor: pointer; pointer-events: all;
+  }
+  .edge-label:hover { color: var(--ink); }
+  /* Tracks .react-flow__edge.dim: a label must not outshout its own line. */
+  .edge-label.dim { opacity: 0.1; }
+  .react-flow__attribution { display: none; }
+  /* React Flow ships a light-only chrome; re-point it at the theme tokens. */
+  .react-flow__controls-button {
+    background: var(--panel); border-bottom: 1px solid var(--line); fill: var(--ink);
+  }
+  .react-flow__controls-button:hover { background: var(--bg); }
+  .react-flow__minimap { background: var(--panel); border: 1px solid var(--line); }
+  .react-flow__minimap-mask { fill: var(--bg); fill-opacity: .6; }
+
+  @media (max-width: 720px) {
+    header { gap: 6px; padding: 0 10px; min-height: 56px; }
+    header .tabs {
+      min-width: 0; overflow-x: auto; scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+    header .tabs::-webkit-scrollbar { height: 3px; }
+    header .tabs::-webkit-scrollbar-thumb {
+      background: var(--accent); border-radius: 3px;
+    }
+    header .tab { flex: none; min-height: 44px; }
+    header button:not(.tab) { min-height: 44px; }
+    header .minimap-toggle { display: none; }
+    /* No keyboard to press, and the controls have moved into the menu. */
+    header button kbd { display: none; }
+    /* Only the tabs and the tick earn header space; the rest goes behind ☰. */
+    header .controls { display: none; }
+    .burger-wrap { display: flex; }
+    .badge .label { display: none; }
+    .badge .mark { display: inline; }
+    /* Two square keys either side of the title: the menu and the check. */
+    header .burger, header .badge {
+      display: flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; min-height: 0; padding: 0;
+      font-size: 15px; border-radius: 8px;
+    }
+
+    main.panel-open .canvas, main:not(.panel-open) aside { display: none; }
+    aside { width: 100%; border-left: 0; }
+    .mobile-back {
+      display: block; flex: none; align-self: flex-start;
+      /* Both labels to one width, so the corner reads as one button that
+         changed its mind rather than two that nearly line up. */
+      min-height: 44px; min-width: 120px; text-align: center; margin: 12px 16px 0;
+      color: var(--ink); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 6px;
+      font: inherit; font-weight: 500; padding: 7px 12px; cursor: pointer;
+    }
+    .keys-only { display: none; }
+    /* The button carries its own inset, so it lands in the same place whether
+       the canvas or the panel is on screen. */
+    .react-flow__panel.canvas-intro { display: block; margin: 0; }
+    .panel-head { padding: 16px; }
+    .panel-body { padding: 16px 16px 28px; }
+    .edge-legend { display: none; }
+    /* The fit stops at a readable floor, so a graph wider than the phone is
+       cropped with nothing on screen to say so. The minimap is the only thing
+       that shows the viewport against the whole graph, so it stays: small
+       enough to leave the canvas alone, and with no toggle, since the header
+       has no room and there is no keyboard to press M on. */
+    .react-flow__minimap { width: 108px; height: 78px; }
+    /* The svg carries its full size as an attribute, so the box alone would
+       crop it. The viewBox is already set, so it just scales into the box. */
+    .react-flow__minimap-svg { width: 100%; height: 100%; }
+    .react-flow__controls-button { width: 44px; height: 44px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node, .react-flow__edge { transition: none; }
+  }

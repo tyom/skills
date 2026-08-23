@@ -1,33 +1,30 @@
-#!/usr/bin/env bash
-# build.sh <flow.json> <out.html> <source-root>
-# Inlines the vendored runtime and the flow data into one self-contained page,
-# then checks the graph and the refs against source-root.
-set -euo pipefail
+#!/usr/bin/env python3
+"""build.py <flow.json> <out.html> <source-root>
 
-if [ $# -ne 3 ]; then
-  echo "usage: build.sh <flow.json> <out.html> <source-root>" >&2
-  exit 2
-fi
-
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-
-# ponytail: python3 for the substitution, not sed — 400KB of minified JS is full
-# of backslashes and & that sed would eat.
-DIR="$DIR" IN="$1" OUT="$2" ROOT="$3" python3 <<'PY'
+Inlines the flow data into the bundled page, then checks the graph and refs
+against source-root.
+"""
+# ponytail: one stdlib process builds and checks the page. A second templating
+# tool would only duplicate the escaping and file handling below.
 import collections, functools, html, json, os, pathlib, sys
 
-d = pathlib.Path(os.environ["DIR"])
-src = pathlib.Path(os.environ["IN"])
+if len(sys.argv) != 4:
+    # 2, not 1: a broken graph also exits non-zero, and the two are worth telling apart.
+    print("usage: build.py <flow.json> <out.html> <source-root>", file=sys.stderr)
+    sys.exit(2)
+
+d = pathlib.Path(__file__).resolve().parent
+src = pathlib.Path(sys.argv[1])
 
 try:
     data = json.loads(src.read_text())
 except (OSError, json.JSONDecodeError) as e:
-    sys.exit(f"build.sh: cannot read {src}: {e}")
+    sys.exit(f"build.py: cannot read {src}: {e}")
 
 # One diagram is written flat; several arrive under `flows`. The page only ever
 # sees the array, so the shorthand is widened here.
 if not isinstance(data, dict):
-    sys.exit(f"build.sh: {src} must hold a JSON object")
+    sys.exit(f"build.py: {src} must hold a JSON object")
 nested = isinstance(data.get("flows"), list) and bool(data["flows"])
 flows = data["flows"] if nested else [data]
 
@@ -36,25 +33,31 @@ flows = data["flows"] if nested else [data]
 for i, flow in enumerate(flows):
     where = f"flows[{i}]" if nested else "top level"
     if not isinstance(flow, dict):
-        sys.exit(f"build.sh: {src} needs an object at {where}")
+        sys.exit(f"build.py: {src} needs an object at {where}")
     for key in ("nodes", "edges"):
         if not isinstance(flow.get(key), list):
-            sys.exit(f"build.sh: {src} needs a {key!r} array at {where}")
+            sys.exit(f"build.py: {src} needs a {key!r} array at {where}")
     if not flow["nodes"]:
-        sys.exit(f"build.sh: {src} has no nodes at {where}")
+        sys.exit(f"build.py: {src} has no nodes at {where}")
     for j, n in enumerate(flow["nodes"]):
         if not isinstance(n, dict) or not isinstance(n.get("id"), str) or not n["id"]:
-            sys.exit(f"build.sh: {src} needs a string 'id' at {where}.nodes[{j}]")
+            sys.exit(f"build.py: {src} needs a string 'id' at {where}.nodes[{j}]")
     for j, e in enumerate(flow["edges"]):
         ends = [e.get(k) for k in ("from", "to")] if isinstance(e, dict) else []
         if len(ends) != 2 or not all(isinstance(x, str) and x for x in ends):
-            sys.exit(f"build.sh: {src} needs string 'from' and 'to' at {where}.edges[{j}]")
+            sys.exit(f"build.py: {src} needs string 'from' and 'to' at {where}.edges[{j}]")
 
 # The vocabulary SKILL.md documents. Unknown kinds render as a plain step, so
 # without this a typo silently paints a success terminal as an ordinary box.
 NODE_KINDS = {"start", "step", "decision", "io", "store", "end", "success",
               "fork", "join", "state"}
 EDGE_KINDS = {"async", "error", "retry"}
+# Emphasis, not evidence: a level renders a node larger so a long flow reads as
+# a few phases. It only works by contrast, so H1_SHARE is the point past which
+# the top tier has stopped being emphasis and is just a bigger flat cloud. Only
+# h1 is counted; h2 is the middle tier and is meant to be the commoner of the two.
+LEVELS = {"h1", "h2"}
+H1_SHARE = 1 / 3
 
 # A browser cannot ask the OS for "the" editor, and a reader may not use the one
 # the trace was built on, so the page holds every opener and this is only the one
@@ -85,15 +88,15 @@ def resolve_links(owner, where, root, warnings):
     if links is None:
         return
     if not isinstance(links, list):
-        sys.exit(f"build.sh: {src} needs a 'links' array at {where}")
+        sys.exit(f"build.py: {src} needs a 'links' array at {where}")
     for k, link in enumerate(links):
         if not isinstance(link, dict) or not (link.get("url") or link.get("path")):
-            sys.exit(f"build.sh: {src} needs 'url' or 'path' at {where}.links[{k}]")
+            sys.exit(f"build.py: {src} needs 'url' or 'path' at {where}.links[{k}]")
         if link.get("url"):
             # The page renders a url as an anchor, so a scheme that carries code
             # has no business reaching it.
             if not link["url"].lower().startswith(("http://", "https://")):
-                sys.exit(f"build.sh: {src} needs an http(s) 'url' at {where}.links[{k}]")
+                sys.exit(f"build.py: {src} needs an http(s) 'url' at {where}.links[{k}]")
             link.setdefault("label", link["url"])
             continue
         path, line = link["path"], link.get("line")
@@ -161,12 +164,25 @@ def check(flow, root):
         kind = node.get("kind", "step")
         if kind not in NODE_KINDS:
             bad.append(("unknown node kind", f"{nid}: {kind}"))
+        level = node.get("level")
+        if level is not None and level not in LEVELS:
+            bad.append(("unknown node level", f"{nid}: {level}"))
+        # A bar is pinned to its height and shows only its label, so a level set
+        # on one is silently nothing. Say so rather than render it unchanged.
+        if level is not None and kind in ("fork", "join"):
+            bad.append(("level on a bar", f"{nid}: {kind}"))
         if kind == "decision" and len(outgoing[nid]) < 2:
             bad.append((f"decision, {len(outgoing[nid])} way out", f"{nid}: {label}"))
         if kind not in ("end", "success") and not outgoing[nid]:
             bad.append(("path stops, not an end", f"{nid}: {label}"))
         if kind == "start" and incoming[nid]:
             bad.append(("start has an inbound edge", f"{nid}: {label}"))
+
+    top = [n for n in nodes if n.get("level") == "h1"
+           and n.get("kind", "step") not in ("fork", "join")]
+    if nodes and len(top) > len(nodes) * H1_SHARE:
+        warnings.append(("h1 too often to stand out",
+                         f"{len(top)} of {len(nodes)} nodes"))
 
     for e in edges:
         where = f"{e['from']} -> {e['to']}"
@@ -211,10 +227,10 @@ def check(flow, root):
 
 # Checked before the page is written, so each flow can carry its own problems
 # and the badge on the page says exactly what this output says.
-root = pathlib.Path(os.environ["ROOT"]).resolve()
+root = pathlib.Path(sys.argv[3]).resolve()
 editor = data.get("editor") or detect_editor()
 if editor not in EDITORS:
-    sys.exit(f"build.sh: unknown editor {editor!r}: use one of {', '.join(EDITORS)}")
+    sys.exit(f"build.py: unknown editor {editor!r}: use one of {', '.join(EDITORS)}")
 
 reports = [check(flow, root) for flow in flows]
 for flow, (_, bad) in zip(flows, reports):
@@ -225,21 +241,19 @@ for marker, part in (
     # The title is written into the head, not set by the script, so the file
     # names itself in a listing or a bookmark that never runs it.
     ("__TITLE__", html.escape(data.get("title") or flows[0].get("title") or "Flow")),
-    ("/*VENDOR_CSS*/", (d / "vendor.css").read_text()),
-    ("/*VENDOR_JS*/", (d / "vendor.js").read_text()),
     # </script> inside a string would close the data block early.
     ("__FLOW_DATA__", json.dumps({"title": data.get("title", ""), "editor": editor,
-                                  "project": root.name, "hasFileLinks": bool(file_links),
+                                  "hasFileLinks": bool(file_links),
                                   "flows": flows})
                           .replace("</", "<\\/")),
 ):
     if marker not in page:
-        sys.exit(f"build.sh: template.html is missing {marker}")
+        sys.exit(f"build.py: template.html is missing {marker}")
     page = page.replace(marker, part, 1)
 
 # The page is written either way: a broken graph has to stay openable while it
 # is being fixed.
-out = pathlib.Path(os.environ["OUT"])
+out = pathlib.Path(sys.argv[2])
 out.write_text(page)
 n = sum(len(f["nodes"]) for f in flows)
 e = sum(len(f["edges"]) for f in flows)
@@ -250,10 +264,9 @@ for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
     if not warnings and not bad:
         continue
     counts = [f"{len(bad)} problem(s)"] if bad else []
-    counts += [f"{len(warnings)} ref warning(s)"] if warnings else []
+    counts += [f"{len(warnings)} warning(s)"] if warnings else []
     print(f"{flow.get('title') or f'flows[{i}]'}: {', '.join(counts)}")
     for what, where in bad + warnings:
         print(f"  {what:<28}{where}")
 
 sys.exit(1 if any(bad for _, bad in reports) else 0)
-PY
