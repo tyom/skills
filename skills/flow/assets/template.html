@@ -557,7 +557,7 @@
 
   // SVG fills and the minimap don't resolve CSS vars, so the palette is read
   // out of the stylesheet once. Changing this list or any .node-* rule: build
-  // assets/kinds-probe.json, which renders every kind once, and look at it.
+  // assets/kinds-probe.json, which renders every kind and awkward graph shape.
   var KINDS = ['start', 'step', 'decision', 'io', 'store', 'end', 'success', 'fork', 'join', 'state'];
   var css = getComputedStyle(document.documentElement);
   var KIND_COLOR = KINDS.reduce(function (m, k) {

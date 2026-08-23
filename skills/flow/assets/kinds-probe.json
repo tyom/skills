@@ -1,9 +1,9 @@
 {
-  "title": "Node and edge kind probe",
+  "title": "Node, edge and topology probe",
   "flows": [
     {
       "title": "Fork and join",
-      "summary": "Not a tracing example: invented steps with no refs, here only so every node and edge kind renders once.",
+      "summary": "Invented steps with no refs. Together with the state-machine tab, this covers every node and edge kind.",
       "nodes": [
         { "id": "s", "label": "Start", "kind": "start" },
         { "id": "f", "label": "Fan out", "kind": "fork", "note": "all three run" },
@@ -39,6 +39,52 @@
         { "from": "run", "to": "idle", "label": "pause" },
         { "from": "run", "to": "run", "label": "tick", "kind": "retry" },
         { "from": "run", "to": "stop", "label": "halt" }
+      ]
+    },
+    {
+      "title": "Multiple entries",
+      "summary": "Two alternative entries meet at shared work, which can reach either terminal outcome.",
+      "nodes": [
+        { "id": "hook", "label": "Webhook received", "kind": "start" },
+        { "id": "timer", "label": "Schedule fired", "kind": "start" },
+        { "id": "load", "label": "Load request", "kind": "step" },
+        { "id": "valid", "label": "Request valid?", "kind": "decision" },
+        { "id": "accepted", "label": "Accepted", "kind": "success" },
+        { "id": "rejected", "label": "Rejected", "kind": "end" }
+      ],
+      "edges": [
+        { "from": "hook", "to": "load" },
+        { "from": "timer", "to": "load" },
+        { "from": "load", "to": "valid" },
+        { "from": "valid", "to": "accepted", "label": "yes" },
+        { "from": "valid", "to": "rejected", "label": "no", "kind": "error" }
+      ]
+    },
+    {
+      "title": "Reconvergence and retry",
+      "summary": "Only one route runs. Both meet at Continue, then the check either finishes or loops back. Cancel exits separately.",
+      "nodes": [
+        { "id": "s", "label": "Start", "kind": "start" },
+        { "id": "choice", "label": "Choose route", "kind": "decision" },
+        { "id": "quick", "label": "Quick route", "kind": "step" },
+        { "id": "careful", "label": "Careful route", "kind": "step" },
+        { "id": "merge", "label": "Continue", "kind": "step" },
+        { "id": "check", "label": "Check passed?", "kind": "decision" },
+        { "id": "done", "label": "Done", "kind": "success" },
+        { "id": "revise", "label": "Revise input", "kind": "step" },
+        { "id": "cancelled", "label": "Cancelled", "kind": "end" }
+      ],
+      "edges": [
+        { "from": "s", "to": "choice" },
+        { "from": "choice", "to": "quick", "label": "quick" },
+        { "from": "choice", "to": "careful", "label": "careful" },
+        { "from": "choice", "to": "cancelled", "label": "cancel" },
+        { "from": "quick", "to": "merge" },
+        { "from": "careful", "to": "merge" },
+        { "from": "merge", "to": "check" },
+        { "from": "check", "to": "done", "label": "yes" },
+        { "from": "check", "to": "revise", "label": "no" },
+        { "from": "revise", "to": "choice", "label": "try again", "kind": "retry" }
       ]
     }
   ]

@@ -56,7 +56,7 @@ Done when:
 
 ## 3. Write the JSON
 
-Write only `/tmp/YYYY-MM-DD-flow-<slug>.json`. Dagre computes coordinates and the template owns every style. Read [`assets/example.json`](assets/example.json) if a complete single-flow example would help.
+Write only `/tmp/YYYY-MM-DD-flow-<slug>.json`. Dagre computes coordinates and the template owns every style. Read [`assets/example.json`](assets/example.json) for a complete single-flow example. Read [`assets/kinds-probe.json`](assets/kinds-probe.json) when multiple entries, parallel branches, reconvergence, or loops make the topology unclear.
 
 Top-level fields are `title`, `summary`, `nodes`, and `edges`. For multiple tabs, use `title` plus a `flows` array. Each flow has its own `title`, `summary`, `nodes`, and `edges`. Node ids are scoped to their flow.
 
