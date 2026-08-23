@@ -18,8 +18,8 @@ assets/build.sh assets/example.json /tmp/flow-example.html ../..
 open /tmp/flow-example.html
 ```
 
-`kinds-probe.json` is the one to open after touching `template.html` or
-`vendor.js`: its five tabs cover fork/join, multiple entries, decision
+`kinds-probe.json` is the one to open after changing the page source: its five
+tabs cover fork/join, multiple entries, decision
 reconvergence, a retry, a state cycle, a self-edge, every node and edge kind, and
 both levels against every shape that sizes itself.
 Click a node and an edge on each tab, check the detail panel fills, and walk it
@@ -47,12 +47,18 @@ warnings instead — exit 0 — because a flow may trace a subject with no local
 source. Pass the wrong `<source-root>` to see them. A `links` entry with a
 `path` is checked the same way.
 
-## Refresh the vendored runtime
+## Rebuild the page
 
-`assets/vendor.sh` refetches React, dagre and `@xyflow/react` from unpkg at the
-versions pinned at the top of the script. Only run it to bump a version, and
-open the probe afterwards — the UMD/JSX shim in that script is the part most
-likely to break.
+Bun compiles `src/template.html` and its imports into the committed
+`assets/template.html`. Normal flow builds use that file and do not need Bun or
+`node_modules`.
+
+```bash
+bun install --frozen-lockfile
+bun run build
+```
+
+Run the kinds probe afterwards.
 
 ## End to end
 

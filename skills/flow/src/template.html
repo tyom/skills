@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Bun writes the standalone assets/template.html from this source. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="tyom/skills/flow">
+<title>__TITLE__</title>
+<!-- The page follows the system by wearing the canvas classes, so the dark
+     palette lives in one place. In the head, because the body paints its
+     background before the runtime below has finished parsing. -->
+<script>
+(function () {
+  var dark = matchMedia('(prefers-color-scheme: dark)');
+  function apply() {
+    var root = document.documentElement.classList;
+    root.toggle('canvas-dark', dark.matches);
+    root.toggle('canvas-light', !dark.matches);
+  }
+  apply();
+  dark.addEventListener('change', apply);
+})();
+</script>
+</head>
+<body>
+<div id="root"></div>
+
+<script id="flow-data" type="application/json">__FLOW_DATA__</script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

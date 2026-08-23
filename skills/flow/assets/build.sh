@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # build.sh <flow.json> <out.html> <source-root>
-# Inlines the vendored runtime and the flow data into one self-contained page,
-# then checks the graph and the refs against source-root.
+# Inlines the flow data into the bundled page, then checks the graph and refs
+# against source-root.
 set -euo pipefail
 
 if [ $# -ne 3 ]; then
@@ -11,8 +11,8 @@ fi
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
-# ponytail: python3 for the substitution, not sed — 400KB of minified JS is full
-# of backslashes and & that sed would eat.
+# ponytail: one stdlib process builds and checks the page. A second templating
+# tool would only duplicate the escaping and file handling below.
 DIR="$DIR" IN="$1" OUT="$2" ROOT="$3" python3 <<'PY'
 import collections, functools, html, json, os, pathlib, sys
 
@@ -244,8 +244,6 @@ for marker, part in (
     # The title is written into the head, not set by the script, so the file
     # names itself in a listing or a bookmark that never runs it.
     ("__TITLE__", html.escape(data.get("title") or flows[0].get("title") or "Flow")),
-    ("/*VENDOR_CSS*/", (d / "vendor.css").read_text()),
-    ("/*VENDOR_JS*/", (d / "vendor.js").read_text()),
     # </script> inside a string would close the data block early.
     ("__FLOW_DATA__", json.dumps({"title": data.get("title", ""), "editor": editor,
                                   "project": root.name, "hasFileLinks": bool(file_links),
