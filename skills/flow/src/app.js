@@ -1316,6 +1316,16 @@ import './style.css';
         return on.indexOf(was) !== -1 ? was : on[0] || null;
       }
 
+      // Focus follows the walk. React Flow makes every node focusable, so a ring
+      // left behind on the step they came from reads as a second selection, and
+      // a reader who tabs in and then walks would tab back to where they began.
+      function focusNode(id) {
+        var el = document.querySelector(
+          '.react-flow__node[data-id="' + CSS.escape(id) + '"]');
+        // The pan below is the one that decides what is on screen.
+        if (el) el.focus({ preventScroll: true });
+      }
+
       // A step walked to off-screen leaves the panel describing something the
       // reader cannot see. Pan to it when it is outside, and hold the zoom, so
       // the walk never rescales the diagram underneath them.
@@ -1397,6 +1407,7 @@ import './style.css';
         // still scrolls the page.
         ev.preventDefault();
         setSel({ kind: 'node', id: pick });
+        focusNode(pick);
         reveal(pick);
       }
 
@@ -1681,6 +1692,9 @@ import './style.css';
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
             nodesDraggable: false,
+            // The walk pans for itself, and it animates; React Flow's own pan
+            // on focus would jump there first and leave nothing to animate.
+            autoPanOnNodeFocus: false,
             onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
             onPaneClick: function () { setSel(null); },
             fitView: true, fitViewOptions: FIT,

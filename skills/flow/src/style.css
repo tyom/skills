@@ -306,6 +306,9 @@
   .react-flow__node:focus-visible .node {
     outline: 3px solid var(--accent); outline-offset: 4px;
   }
+  /* Where focus is already the selection, the halo above says so, and it says
+     it in the node's own shape — an outline on a hexagon draws a rectangle. */
+  .react-flow__node:focus-visible .node.selected { outline: none; }
   .react-flow__edge:focus-visible .react-flow__edge-path {
     stroke-width: 4 !important;
   }
