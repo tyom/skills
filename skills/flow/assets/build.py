@@ -367,7 +367,7 @@ def cuts(flow, m):
     starts = {n["id"] for n in flow["nodes"] if n.get("kind") == "start"}
     ends = {n["id"] for n in flow["nodes"] if n.get("kind") in ("end", "success")}
 
-    def reaches(skip):
+    def without(skip):
         seen, queue = set(), list(starts)
         while queue:
             cur = queue.pop()
@@ -375,12 +375,18 @@ def cuts(flow, m):
                 continue
             seen.add(cur)
             queue += onward[cur]
-        return seen & ends
+        return seen
 
     found = []
     for i, node in enumerate(flow["nodes"]):
         nid = node["id"]
-        if nid in starts or nid in ends or reaches(nid):
+        if nid in starts or nid in ends:
+            continue
+        # Not "some end goes unreached": a flow that can bail out early keeps one
+        # reachable from its second node, and by that test nothing after the bail
+        # is ever a seam. What a seam has to own is everything below it.
+        below = {n["id"] for n in flow["nodes"] if m["rank"][n["id"]] > m["rank"][nid]}
+        if below & without(nid):
             continue
         a, b = m["rank"][nid] + 1, m["depth"] - m["rank"][nid]
         # Below three ranks a half is a start wired straight to an end, which is

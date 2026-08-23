@@ -100,6 +100,23 @@ expect("chain seam", re.findall(r"split candidate\s+(\S+ \d+ \+ \d+ ranks)", out
 # One route through: nothing to say about branching, and no split would change it.
 expect("chain branching", "branching is high" in out, False)
 
+# A flow that can bail out early keeps a terminal reachable two nodes in. Asking
+# whether some end goes unreached finds no seam past that point at all, so the
+# seam here has to be found by what it owns below it instead.
+tail = [f"a{i}" for i in range(1, 14)]
+BAIL = json.dumps({
+    "title": "early exit",
+    "nodes": [{"id": "s", "kind": "start"}, {"id": "d", "kind": "decision"},
+              {"id": "early", "kind": "end"}]
+             + [{"id": i} for i in tail] + [{"id": "e", "kind": "end"}],
+    "edges": [{"from": "s", "to": "d"}, {"from": "d", "to": "early", "label": "no"},
+              {"from": "d", "to": tail[0], "label": "yes"}]
+             + [{"from": a, "to": b} for a, b in zip(tail, tail[1:])]
+             + [{"from": tail[-1], "to": "e"}]})
+expect("seam past an early exit",
+       re.findall(r"split candidate\s+(\S+ \d+ \+ \d+ ranks)", run(BAIL)),
+       ["a6: 8 + 9 ranks"])
+
 # Two chains that leave one hub and never meet again, so the hub is the only
 # node every path crosses. It sits one rank in, and a 2-rank half is a start
 # wired straight to an end, so this flow is deep enough to warn and has no seam
