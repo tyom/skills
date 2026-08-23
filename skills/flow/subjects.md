@@ -1,87 +1,96 @@
-# Subjects: what this draws well, and what to send elsewhere
+# Subjects: fit by graph behaviour
 
-Two tests, both required. **It branches**: a straight run of steps is a list, and
-a list reads better as a list. **No one file already shows the branching**: if a
-single file lays the graph out plainly, point at the file.
+The useful question is **what can happen next, and why?** Use this renderer when
+the answer depends on decisions, state changes, retries, failures, concurrency,
+or convergence. The definition may sit in one dense file or be implied across
+many sources. What matters is whether the graph saves the reader from mentally
+executing it.
 
-Ranked below by how much the tracing adds.
+## Decisions and terminal states
 
-## The graph exists, nothing displays it
+Use `decision` when exactly one outcome runs. Label every outcome and terminate
+every path with `end` or `success`.
 
-The answer is spread over several files and no one has seen it whole. Highest
-payoff, because the diagram is the first time it exists.
+- Payment authorisation, including challenge, decline, capture and refund.
+- Troubleshooting and support diagnosis, where each answer rules out branches.
+- Incident triage and escalation, including recovery and hand-off states.
+- Eligibility, permissions, feature flags and policy decisions.
+- Webhook receipt, cache reads, migrations and queue consumers where failure paths carry most of the explanation.
 
-- **Middleware and interceptor chains.** The file is a list of `app.use(...)`; the truth is which ones short-circuit, and in what order.
-- **Route matching precedence.** nginx `location` blocks, a framework router, a proxy rule list. Where 404s and shadowed routes come from.
-- **Service startup ordering.** systemd `After`/`Requires`, compose `depends_on` with healthchecks. Written as per-unit assertions, never as the resulting order.
-- **Task pipelines.** make, just, turbo, nx. The dependency graph is implied by target names alone.
-- **CI workflows.** Jobs, their `needs`, the conditional steps, and what each one does when it fails.
+## States and loops
 
-## One file, but the failure branches are the point
+Use `state` when nodes are places the subject rests and edges are the events that
+move it. The graph should answer whether one state can reach another.
 
-Several distinct terminal states, which is what the `end` rule and the
-reachability check are good at. The happy path is the short one; the diagram is
-mostly everything else that can happen.
+- Orders, subscriptions, claims, tickets and document review.
+- Device pairing, fulfilment and model deployment.
+- XState or reducer machines, even when one file contains the whole definition.
 
-- **Payment authorisation.** Decline, 3DS challenge, capture, refund, chargeback.
-- **Queue consumer.** Ack, retry, DLQ, poison message.
-- **Webhook receipt.** Signature check, idempotency key, replay, provider retry.
-- **Cache read path.** Hit, stale, miss, stampede lock.
-- **Migration.** Up, and the rollback path that gets tested least.
+Use `retry` for a transition that returns to an earlier attempt. This stops the
+highlight walk from treating the loop as progress.
 
-## Worked example: one subject, five tabs
+## Failure and fallback
 
-"Auth flow" is not one flow. As a single diagram it becomes the whole-application
-case below; split into tabs it is the best subject on this page, because it lands
-in both groups above at once.
+Use `error`, `retry` and `async` edges when recovery behaviour is the point.
 
-- **First login.** Credentials, MFA required, account locked, email unverified, session issued.
-- **Authorization code with PKCE.** Redirect out, `state` and `code_verifier` checked on the way back, token exchange.
-- **Request-time session validation.** The middleware case above: what short-circuits, and in what order.
-- **Refresh and rotation.** Including reuse detection, where a replayed refresh token revokes the whole family.
-- **Logout and revocation.** Which of the four above are actually invalidated.
+- Provider or model fallback, circuit breakers and timeouts.
+- Controller reconciliation and eventually consistent repair.
+- Service failover, canary promotion and rollback.
+- Poison messages, dead-letter queues and idempotent replay.
 
-The provider leg exposes the one gap worth knowing about. A handshake between the
-browser, your service and an identity provider is a conversation, and these nodes
-carry what happens, not who does it. Draw your own service's side and make the
-provider a single `io` node. Putting the actor in every `note` is the alternative
-and it reads worse.
+## Concurrency and convergence
 
-Cut the same way for any subject named after a subsystem rather than a path:
-sessions, billing, sync, search. Find the paths inside it first.
+Use `fork` and `join` when every branch runs and later converges. Use `decision`
+when only one branch runs.
 
-## State machines
+- Parallel approvals and review gates.
+- Build fan-out, CI jobs and distributed tasks.
+- Service startup requirements and health checks.
+- Safety interlocks where several conditions must hold before progress.
 
-Reach for `state` pills when the nodes are places the system rests in and the
-edges are the events that move it: order lifecycle, subscription billing, device
-pairing, an XState config drawn from the machine definition. The diagram answers
-"can it get from here to there", which reading the config does not.
+## Resolution and precedence
 
-## Procedures with no code behind them
+These are strongest when declarations are scattered and no source shows the
+resulting order.
 
-An incident escalation, a call tree, a release process, a review process. These
-work, but nothing here compiles, so the `ref` discipline needs a stand-in. Where
-the procedure is written down in the repo, `ref` the document and the line, and
-the build check validates it exactly as it does source. Where it is not, the
-node's `detail` names the decision it came from and `summary` says who agreed it.
-A node that can answer neither is the guess this skill exists to avoid.
+- Middleware and interceptor short-circuits.
+- Route, proxy and configuration precedence.
+- Task and service dependency ordering.
+- Permissions, retention and consent rules.
+- Dependency resolution, parser branches and evaluator error paths.
 
-A roster is not a diagram. A call tree three deep, three contacts each, is 40
-nodes doing four distinct things. Draw one participant's procedure once, where
-the branching is, and leave the roster as a table.
+A dense router, policy or state-machine file may still deserve a graph. Point at
+the file only when reading it already answers the question without mental
+simulation.
 
-## Subjects with no code here at all
+## One subject, several tabs
 
-A protocol, a standard, a vendor's API, a product's own rules. Both tests still
-apply, and the branching has to come from the specification: research it first,
-then trace what it says. `links` carries the sources, since there is no
-`path:line` to carry them. A well-specified handshake is a strong subject; a
-topic whose authority you cannot find is the guess this skill exists to avoid.
+Use tabs for complete related flows, not fragments of one route.
+
+"Auth flow" can split into first login, authorisation code with PKCE,
+request-time session validation, refresh rotation, and logout or revocation.
+Other useful comparisons include current versus proposed behaviour, user-role
+variants, platform variants and provider alternatives.
+
+A conversation between actors is still a sequence diagram. When actor order is
+secondary, draw the service under study and collapse an external participant to
+one `io` node.
+
+## Physical mechanisms and human procedures
+
+Locks, appliances, machine cycles, access controls and safety cut-offs fit when
+actions change hidden state or trigger different outcomes. Cite the manual,
+datasheet or standard behind each transition.
+
+Release procedures, call trees and review processes also fit. Use a document ref
+where the procedure is written down. Otherwise name the decision and its owner
+in the node detail. Draw the procedure once and keep rosters in a table.
 
 ## Send these elsewhere
 
-- **A straight chain.** No decisions, no forks. Write the list.
-- **Who talks to whom over time.** A sequence diagram. Ordering between actors is the content, and this renderer discards it.
-- **Volumes through a funnel.** A Sankey. Edge weight is not in the vocabulary.
-- **A whole application.** 300 nodes reads as wallpaper. Take one path through it, or give each subsystem its own tab.
-- **Entities and their relations.** An ER diagram.
+- **A straight chain.** Write a list unless state, failure or evidence detail makes navigation useful.
+- **Actors talking over time.** Use a sequence diagram when actor order is the content.
+- **Weighted movement.** Use a Sankey when edge volume matters.
+- **Duration and bottlenecks.** Use a timeline or schedule.
+- **Entities and relations.** Use an ER diagram.
+- **A whole application.** Select one question or split independent flows into tabs.
