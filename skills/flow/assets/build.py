@@ -225,6 +225,54 @@ def check(flow, root):
     return warnings, bad
 
 
+def measure(flow):
+    """Two numbers about the flow itself, rather than the window it opens in.
+
+    V(G) is McCabe with a virtual exit added, so a flow with four terminals does
+    not score better than one with a single end. A retry edge counts, because
+    going round is a route the reader can take. Depth is the longest path
+    without them, which is how dagre ranks and how the panel's backward walk
+    already treats them.
+    """
+    ids = {n["id"] for n in flow["nodes"]}
+    # A dangling edge is already reported as a problem. Counting it here would
+    # describe the same fault a second time, in a stranger number.
+    edges = [e for e in flow["edges"] if e["from"] in ids and e["to"] in ids]
+    ends = sum(1 for n in flow["nodes"] if n.get("kind") in ("end", "success"))
+
+    onward = collections.defaultdict(list)
+    for e in edges:
+        if e.get("kind") != "retry":
+            onward[e["from"]].append(e["to"])
+    order, seen, open_path, back = [], set(), set(), set()
+
+    def walk(nid):
+        seen.add(nid)
+        open_path.add(nid)
+        for nxt in onward[nid]:
+            # An untagged cycle still has to break somewhere, and dagre breaks it
+            # at the same edge: the one that closes the walk.
+            if nxt in open_path:
+                back.add((nid, nxt))
+            elif nxt not in seen:
+                walk(nxt)
+        open_path.discard(nid)
+        order.append(nid)
+
+    # Node order, not set order: a set of strings iterates differently per run,
+    # which would pick different edges to break and report a different depth.
+    for node in flow["nodes"]:
+        if node["id"] not in seen:
+            walk(node["id"])
+
+    rank = dict.fromkeys(ids, 0)
+    for nid in reversed(order):
+        for nxt in onward[nid]:
+            if (nid, nxt) not in back and rank[nid] + 1 > rank[nxt]:
+                rank[nxt] = rank[nid] + 1
+    return len(edges) + ends - len(ids) + 1, max(rank.values()) + 1
+
+
 # Checked before the page is written, so each flow can carry its own problems
 # and the badge on the page says exactly what this output says.
 root = pathlib.Path(sys.argv[3]).resolve()
@@ -259,6 +307,14 @@ n = sum(len(f["nodes"]) for f in flows)
 e = sum(len(f["edges"]) for f in flows)
 opens = f", {len(file_links)} file link(s), {editor} first" if file_links else ""
 print(f"{out}  ({len(page) // 1024}KB, {len(flows)} flow(s), {n} nodes, {e} edges{opens})")
+
+# Printed every run rather than only when high: nobody has calibrated a band for
+# a diagram yet, and a number you see on every build is what will settle one.
+for i, flow in enumerate(flows):
+    v, depth = measure(flow)
+    # Two spaces of its own, since a title is the author's text and can be any
+    # length; without them a long one runs straight into the number.
+    print(f"  {(flow.get('title') or f'flows[{i}]'):<26}  V(G) {v}, {depth} ranks")
 
 for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
     if not warnings and not bad:
