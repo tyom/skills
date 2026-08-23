@@ -450,6 +450,19 @@ import './style.css';
     return { edges: edges, dist: dist, via: via, fanIn: fanIn };
   }
 
+  // Whether an edge between two lit nodes is drawn as well. Most are: an added
+  // parent hangs off the route instead of floating, a second edge between the
+  // same pair lights beside the first, and the loop home lights when both its
+  // ends are on show. Not one that jumps forward over a step of the route,
+  // though — it arrives where the route already arrives, having missed out what
+  // the route went through, and it reads as a second way in. A step hung off
+  // the route stands at -1 and is no part of that, or the edge hanging it there
+  // would be read as a jump and go dim.
+  function alongRoute(dist, e) {
+    if (dist[e.from] === undefined || dist[e.to] === undefined) return false;
+    return !(dist[e.to] >= 0 && dist[e.from] > dist[e.to] + 1);
+  }
+
   // Furthest hop first, so the list reads start-to-here.
   function stepsInto(lit, minDist) {
     return Object.keys(lit.dist)
@@ -1125,16 +1138,12 @@ import './style.css';
               up.dist[e.from] === undefined) up.dist[e.from] = -1;
         });
       }
-      // Then every edge between two lit nodes, in either direction. Which nodes
+      // Then the edges between two lit nodes, in either direction. Which nodes
       // light is already settled above, so this only draws what runs between
-      // them: an added parent hangs off the route instead of floating, a second
-      // edge between the same pair lights beside the first, and the loop home
-      // lights when both its ends are on show. A dim node keeps its edges dim,
-      // which is what holds the loop back in the first place.
+      // them; see alongRoute for which of those count. A dim node keeps its
+      // edges dim, which is what holds the loop back in the first place.
       f.edgeItems.forEach(function (e) {
-        if (up.dist[e.from] !== undefined && up.dist[e.to] !== undefined) {
-          up.edges[e.id] = true;
-        }
+        if (alongRoute(up.dist, e)) up.edges[e.id] = true;
       });
 
       if (sel.kind === 'edge') {

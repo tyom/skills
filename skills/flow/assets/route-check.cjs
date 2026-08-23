@@ -17,7 +17,7 @@ function slice(from, to) {
   if (a === -1 || b === -1) throw new Error('app.js no longer holds ' + from);
   return src.slice(a, b + to.length);
 }
-var upstream = new Function(
+var api = new Function(
   'var KIND_COLOR = {};\n' +
   slice('var KINDS = [', '];') + '\n' +
   slice('function kindOf(', '}') + '\n' +
@@ -27,8 +27,10 @@ var upstream = new Function(
   slice('function waysIn(', '\n  }') + '\n' +
   slice('function shortestRoute(', '\n  }') + '\n' +
   slice('function upstream(', '\n  }') + '\n' +
-  'return upstream;'
+  slice('function alongRoute(', '\n  }') + '\n' +
+  'return { upstream: upstream, alongRoute: alongRoute };'
 )();
+var upstream = api.upstream, alongRoute = api.alongRoute;
 
 // A flow index is what the page builds from the JSON: nodes and edges by id,
 // and each node's ways in and out.
@@ -94,5 +96,28 @@ var detour = index(
   is(of + 'o is hops up', route.dist.o, 2);
 });
 is('untrailed, o hands on to', upstream(detour, 't', null).via.o.to, 't');
+
+// The shortcut edge runs between two lit nodes, but it arrives where the route
+// arrives having missed out the step the route went through.
+function edgeFrom(f, from, to) {
+  return f.edgeItems.filter(function (e) { return e.from === from && e.to === to; })[0];
+}
+var walkedDist = upstream(detour, 't', walked(['a', 't'])).dist;
+is('walked the detour, the shortcut lights',
+   alongRoute(walkedDist, edgeFrom(detour, 'o', 't')), false);
+is('walked the detour, the way in lights',
+   alongRoute(walkedDist, edgeFrom(detour, 'a', 't')), true);
+is('walked the detour, the step down to it lights',
+   alongRoute(walkedDist, edgeFrom(detour, 'o', 'a')), true);
+
+// Untrailed the route takes the shortcut, and the step it skips is hung off it
+// at -1 by the caller. The edge that hangs it there is not a jump.
+var restDist = upstream(detour, 't', null).dist;
+restDist.a = -1;
+is('untrailed, the shortcut lights',
+   alongRoute(restDist, edgeFrom(detour, 'o', 't')), true);
+is('untrailed, the step hung off the route keeps its edges',
+   alongRoute(restDist, edgeFrom(detour, 'o', 'a')) &&
+   alongRoute(restDist, edgeFrom(detour, 'a', 't')), true);
 
 process.exit(bad ? 1 : 0);
