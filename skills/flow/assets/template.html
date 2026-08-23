@@ -786,13 +786,23 @@
   // The shortest route keeps ordinary decision reconvergence legible. Fan-in
   // expands later: every branch into a join, and every branch that comes from a
   // different entry, is also added.
-  function shortestRoute(f, nodeId) {
+  function shortestRoute(f, nodeId, prefer) {
+    function rankOf(e) {
+      return prefer[e.from] === undefined ? -1 : prefer[e.from];
+    }
     var seen = Object.create(null), via = Object.create(null);
     var queue = [nodeId], far = nodeId, start = null;
     seen[nodeId] = true;
     while (queue.length) {
       var cur = queue.shift();
-      waysIn(f, cur).forEach(function (e) {
+      var ways = waysIn(f, cur);
+      // Ways the reader has already walked are taken first, latest first, so
+      // the route back follows the trail wherever it still has one and falls
+      // back to the declared order only where it does not.
+      if (prefer) {
+        ways = ways.slice().sort(function (a, b) { return rankOf(b) - rankOf(a); });
+      }
+      ways.forEach(function (e) {
         if (seen[e.from]) return;
         seen[e.from] = true;
         via[e.from] = e;
@@ -815,7 +825,7 @@
     return { edges: edges, nodes: nodes };
   }
 
-  function upstream(f, nodeId) {
+  function upstream(f, nodeId, prefer) {
     var edges = Object.create(null);
     var pending = [nodeId], examined = Object.create(null);
     var originCache = Object.create(null);
@@ -851,7 +861,8 @@
     }
 
     while (pending.length) {
-      var target = pending.shift(), route = shortestRoute(f, target);
+      var target = pending.shift();
+      var route = shortestRoute(f, target, target === nodeId ? prefer : null);
       Object.keys(route.edges).forEach(function (id) { edges[id] = true; });
 
       Object.keys(route.nodes).forEach(function (id) {
@@ -1461,6 +1472,7 @@
     });
     var canvasTheme = themeState[0], setCanvasTheme = themeState[1];
     var exportRef = useRef(null), menuRef = useRef(null), checkRef = useRef(null);
+    var walk = useRef({ at: null, trail: [] });
     var f = flows[tab];
     var entryIds = useMemo(function () {
       var entries = f.nodeList.filter(function (n) { return kindOf(n.kind) === 'start'; });
@@ -1496,13 +1508,47 @@
       }, Object.create(null));
     }, [placedNodes]);
 
+    // The steps the reader actually walked, in order. A reader who came down one
+    // branch expects the trail back to stay on it for the rest of the walk, not
+    // just for the next step, so this keeps the whole route rather than the last
+    // node. Read during render, so it still names where they stood; the guard
+    // makes a repeat render of the same selection a no-op.
+    var here = sel && sel.kind === 'node' ? sel.id : null;
+    if (here !== walk.current.at) {
+      var was = walk.current.at, path = walk.current.trail;
+      var backTo = here === null ? -1 : path.indexOf(here);
+      walk.current = {
+        at: here,
+        // Stepping back onto the trail shortens it; stepping on from where they
+        // stood extends it; landing anywhere else starts a new one.
+        trail: here === null ? []
+          : backTo !== -1 ? path.slice(0, backTo + 1)
+          : (f.incoming[here] || []).some(function (e) { return e.from === was; })
+            ? path.concat([here])
+            : [here]
+      };
+    }
+    // A trail only counts where it really arrives here, so it can never light
+    // something that does not lead to the selection.
+    var onTrail = !!here && walk.current.trail.length > 1 &&
+      (f.incoming[here] || []).some(function (e) {
+        return walk.current.trail.indexOf(e.from) !== -1;
+      });
+    // A stable dep: the memo rebuilds the ranks only when the trail moves.
+    var trailKey = onTrail ? walk.current.trail.join('\u0000') : '';
+
     // Selecting anything asks the same question: what leads here?
     var lit = useMemo(function () {
       if (!sel) return null;
       // How far down the flow a node stands: the axis the layout runs on.
       var along = dir === 'TB' ? 'y' : 'x';
+      var prefer = null;
+      if (trailKey) {
+        prefer = Object.create(null);
+        walk.current.trail.forEach(function (nid, i) { prefer[nid] = i; });
+      }
       var id = sel.kind === 'node' ? sel.id : f.edgeById[sel.id].from;
-      var up = upstream(f, id);
+      var up = upstream(f, id, prefer);
 
       // A selected node has a shape: the route is one way in and it may have
       // others, which light too, or a step with two parents looks as though it
@@ -1513,7 +1559,7 @@
       //
       // A selected edge has no such shape. It asks what leads to this one edge,
       // so the other ways into the node it leaves are no part of the answer.
-      if (sel.kind === 'node') {
+      if (sel.kind === 'node' && !prefer) {
         (f.incoming[id] || []).forEach(function (e) {
           if (placed[e.from].position[along] < placed[e.to].position[along] &&
               up.dist[e.from] === undefined) up.dist[e.from] = -1;
@@ -1539,7 +1585,7 @@
         if (up.dist[e.to] === undefined) up.dist[e.to] = -1;
       }
       return up;
-    }, [f, sel, placed, dir]);
+    }, [f, sel, placed, dir, trailKey]);
 
     var nodes = useMemo(function () {
       return placedNodes.map(function (n) {
