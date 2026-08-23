@@ -673,7 +673,9 @@
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width +
       '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' +
       '<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">' +
-      '<style>' + styles.replace(/<\/style/gi, '<\\/style') + '</style>' + body +
+      // The sheet is parsed as XML, so the CSS is markup there: an unescaped
+      // '<' in a comment or a content string opens a tag that never closes.
+      '<style>' + styles.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</style>' + body +
       '</div></foreignObject></svg>';
     return {
       blob: new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
