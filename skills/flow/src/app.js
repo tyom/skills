@@ -1551,9 +1551,11 @@ import './style.css';
         setEditor(ev.target.value);
         try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
       }
-    }, Object.keys(OPENERS).map(function (key) {
+      // The closed control shows a bare editor name; the group heading is what
+      // says what picking one does, and it costs no room in the header.
+    }, h('optgroup', { label: 'Open files in' }, Object.keys(OPENERS).map(function (key) {
       return h('option', { key: key, value: key }, OPENERS[key].label);
-    })) : null;
+    }))) : null;
     var exportItems = [
       h('button', {
         key: 'svg', autoFocus: showExport,
