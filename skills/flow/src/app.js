@@ -1297,7 +1297,8 @@ import './style.css';
     function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
 
     // Down walks the flow forward, up walks it back, and left/right cross the
-    // other ways out of the step above. Down reads the graph as it stands, so
+    // other ways out of the step above, or where there are none, the other ways
+    // into the step itself. Down reads the graph as it stands, so
     // down after up lands on the first way on, not the branch it came up from;
     // left and right are how a reader crosses back to it. Up is the one that
     // follows the route already lit, since that route is what the diagram and
@@ -1413,6 +1414,24 @@ import './style.css';
           var at = row.indexOf(here);
           if (at !== -1 && row.length > 1) {
             pick = row[(at + (right ? 1 : row.length - 1)) % row.length];
+          }
+          // No row to cross means the step is the only way on from what leads
+          // here, and the key would do nothing. Where several ways in meet, it
+          // has something better to do: move the route across to the next of
+          // them, the amendment tapping a dim step makes, without leaving here.
+          var ins = ways(here, true);
+          var was = pick ? null : cameFrom(here, ins);
+          var from = ins.indexOf(was);
+          if (from !== -1 && ins.length > 1) {
+            var across = ins[(from + (right ? 1 : ins.length - 1)) % ins.length];
+            var amend = (sel.via || []).concat([across]);
+            // Not every way in can be routed through: one that only reaches the
+            // step by the way already taken would leave the route as it stands.
+            if (upstream(f, here, preferring(amend)).dist[across] !== undefined) {
+              ev.preventDefault();
+              setSel(Object.assign({}, sel, { via: amend }));
+              return;
+            }
           }
         }
         if (!pick) return;
@@ -1574,7 +1593,8 @@ import './style.css';
             // No keyboard on the screen that hides these controls anyway.
             h('span', { className: 'keys-only' },
               'Or walk the flow with the arrow keys: down and up along it, left ' +
-              'and right across a branch. M shows the minimap, L turns the layout' +
+              'and right across a branch, or across the ways in where there is ' +
+              'no branch. M shows the minimap, L turns the layout' +
               (flows.length > 1 ? ', ' + ALT + '1 and up open a tab' : '') + '. '),
             'Two fingers pan and pinch zooms. Double-click blank space to refit.'),
           f.problems.length
