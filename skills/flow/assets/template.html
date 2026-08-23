@@ -57,6 +57,11 @@
     border: 1px solid var(--line); border-radius: 6px;
   }
   header button:hover { border-color: var(--accent); }
+  /* The shortcut rides at the end of the label, quiet enough to read past. */
+  header button kbd {
+    font: inherit; font-size: 10px; margin-left: 6px; padding: 1px 4px;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 4px;
+  }
   button:focus-visible {
     outline: 3px solid var(--accent); outline-offset: 2px;
   }
@@ -387,6 +392,8 @@
     header .tab { flex: none; min-height: 44px; }
     header button:not(.tab) { min-height: 44px; }
     header .minimap-toggle { display: none; }
+    /* No keyboard to press, and the controls have moved into the menu. */
+    header button kbd { display: none; }
     /* Only the tabs and the tick earn header space; the rest goes behind ☰. */
     header .controls { display: none; }
     .burger-wrap { display: flex; }
@@ -907,6 +914,13 @@
       h('span', { className: 'dot', style: { background: color } }), text);
   }
 
+  // The key that does what the button does, worn on the button.
+  function kbd(k) { return h('kbd', null, k); }
+
+  // The same physical key, named the way this platform names it.
+  var ALT = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+    ? '\u2325' : 'Alt+';
+
   function panelHead(title, parts) {
     return h('div', { className: 'panel-head' },
       h('h2', null, title),
@@ -1266,6 +1280,12 @@
     var canvasTheme = themeState[0], setCanvasTheme = themeState[1];
     var exportRef = useRef(null), menuRef = useRef(null), checkRef = useRef(null);
     var f = flows[tab];
+    var entryIds = useMemo(function () {
+      var entries = f.nodeList.filter(function (n) { return kindOf(n.kind) === 'start'; });
+      if (!entries.length) entries = f.nodeList.filter(function (n) { return !f.incoming[n.id]; });
+      return entries.map(function (n) { return n.id; });
+    }, [f]);
+    var startId = entryIds[0] || (f.nodeList[0] || {}).id;
 
     useEffect(function () {
       function syncTab() {
@@ -1340,8 +1360,8 @@
     }, [placedNodes, sel, lit]);
 
     // Relayout moves every node, so the old viewport frames nothing.
-    var fitView = RF.useReactFlow().fitView;
-    useEffect(function () { fitView(FIT); }, [f, dir, fitView]);
+    var rf = RF.useReactFlow();
+    useEffect(function () { rf.fitView(FIT); }, [f, dir, rf]);
 
     var selectEdge = useCallback(function (id) {
       setSel({ kind: 'edge', id: id });
@@ -1415,6 +1435,149 @@
       selectEdge(edge.id);
     }, [selectEdge]);
 
+    // Both toggles are reachable from the header and from a key, and neither
+    // reading may drift from the other. The button carries its key, so the
+    // shortcut is discoverable without a legend of its own.
+    function toggleMap() { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
+    function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
+
+    // Down walks the flow forward, up walks it back, and left/right cross the
+    // other ways out of the step just left. The route walked is kept, so coming
+    // back down a branch retraces it instead of dropping onto the first way on
+    // every time. Stepping sideways picks a different way on, which unmakes
+    // whatever followed the old one.
+    var trailRef = useRef([]);
+
+    useEffect(function () {
+      // The sideways axis is whichever one the layout is not running down, so
+      // the order left/right moves in is the order the eye reads.
+      var axis = dir === 'TB' ? 'x' : 'y';
+      var placed = placedNodes.reduce(function (m, n) {
+        m[n.id] = n;
+        return m;
+      }, Object.create(null));
+
+      // A self-edge is not a way on: it arrives where the walk already stands.
+      function ways(id, back) {
+        var edges = (back ? f.incoming[id] : f.outgoing[id]) || [];
+        return unique(edges.map(function (e) { return back ? e.from : e.to; }))
+          .filter(function (other) { return other !== id; })
+          .sort(function (a, b) {
+            return placed[a].position[axis] - placed[b].position[axis];
+          });
+      }
+
+      // A step walked to off-screen leaves the panel describing something the
+      // reader cannot see. Pan to it when it is outside, and hold the zoom, so
+      // the walk never rescales the diagram underneath them.
+      function reveal(id) {
+        var n = placed[id], pane = document.querySelector('.react-flow');
+        if (!n || !pane) return;
+        var box = pane.getBoundingClientRect();
+        var a = rf.flowToScreenPosition(n.position);
+        var b = rf.flowToScreenPosition({
+          x: n.position.x + n.width, y: n.position.y + n.height
+        });
+        var m = 24;
+        if (a.x >= box.left + m && b.x <= box.right - m &&
+            a.y >= box.top + m && b.y <= box.bottom - m) return;
+        rf.setCenter(n.position.x + n.width / 2, n.position.y + n.height / 2, {
+          zoom: rf.getZoom(), duration: 300
+        });
+      }
+
+      function onKey(ev) {
+        // Alt with a digit opens that tab. The modifier rewrites ev.key into a
+        // symbol on a Mac, so it is the physical key that is read.
+        if (ev.altKey && !ev.metaKey && !ev.ctrlKey && tabIds.length > 1) {
+          var digit = /^Digit([1-9])$/.exec(ev.code);
+          if (digit && +digit[1] <= tabIds.length) {
+            ev.preventDefault();
+            openTab(+digit[1] - 1);
+            return;
+          }
+        }
+        if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
+        var t = ev.target;
+        if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+        // The two view toggles answer to a key as well, so a reader walking the
+        // diagram never has to go back to the header for them.
+        if (ev.key === 'm') { ev.preventDefault(); toggleMap(); return; }
+        if (ev.key === 'l') { ev.preventDefault(); toggleDir(); return; }
+
+        var down = ev.key === 'ArrowDown', up = ev.key === 'ArrowUp';
+        var right = ev.key === 'ArrowRight', left = ev.key === 'ArrowLeft';
+        if (!down && !up && !right && !left) return;
+
+        // Where the walk stands on its own trail. A node reached by clicking is
+        // usually off it, and then the trail starts again from there — except
+        // for a click back onto a step already walked, which picks the walk up
+        // where it was and keeps the route beyond it.
+        var trail = trailRef.current, pick = null;
+        var here = sel && sel.kind === 'node' ? sel.id : null;
+        // The last time the trail stood here, not the first: a loop puts the
+        // same step on the trail twice, and the walk is at the later one.
+        var i = here === null ? -1 : trail.lastIndexOf(here);
+        if (here !== null && i === -1) { trail = [here]; i = 0; }
+
+        if (down || up) {
+          // An edge is already a move between two nodes, so it walks to its own
+          // ends rather than looking for further ones, and starts a trail there.
+          if (!sel) {
+            if (down) { pick = startId; trail = [startId]; }
+          } else if (sel.kind === 'edge') {
+            pick = up ? f.edgeById[sel.id].from : f.edgeById[sel.id].to;
+            trail = [pick];
+          } else {
+            var open = ways(here, up);
+            // Nothing above the first step: pressing up there steps off the
+            // walk entirely and puts every node back in view.
+            if (up && !open.length) {
+              ev.preventDefault();
+              trailRef.current = [];
+              setSel(null);
+              return;
+            }
+            // The step this walk took last time it stood here, if it is still
+            // one of the ways on.
+            var kept = up ? (i > 0 ? trail[i - 1] : null) : trail[i + 1];
+            pick = kept && open.indexOf(kept) !== -1 ? kept : open[0];
+            if (pick && pick !== kept) {
+              // A different way on: the trail beyond this step described the old
+              // one. Walking back to an unrecorded parent keeps the route ahead,
+              // since that is still how the walk reached here.
+              trail = up ? [pick].concat(trail.slice(i)) : trail.slice(0, i + 1).concat([pick]);
+            }
+          }
+        } else if (here !== null) {
+          // Siblings are the other ways out of the step behind: the one the walk
+          // came from, or failing that whatever leads here. Entries have no
+          // shared parent, so they form their own row.
+          var entry = entryIds.indexOf(here) !== -1;
+          var back = entry ? null : (i > 0 ? trail[i - 1] : ways(here, true)[0]);
+          var row = entry ? entryIds.slice().sort(function (a, b) {
+            return placed[a].position[axis] - placed[b].position[axis];
+          }) : (back ? ways(back, false) : []);
+          var at = row.indexOf(here);
+          if (at !== -1 && row.length > 1) {
+            pick = row[(at + (right ? 1 : row.length - 1)) % row.length];
+            trail = trail.slice(0, i).concat([pick]);
+          }
+        }
+        if (!pick) return;
+
+        // Only once a key has somewhere to go, so an arrow the walk cannot use
+        // still scrolls the page.
+        ev.preventDefault();
+        trailRef.current = trail;
+        setSel({ kind: 'node', id: pick });
+        reveal(pick);
+      }
+
+      addEventListener('keydown', onKey);
+      return function () { removeEventListener('keydown', onKey); };
+    }, [f, sel, placedNodes, dir, entryIds, startId, rf, showMap]);
+
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect clears any hand placement.
     function openTab(i) { location.hash = tabIds[i]; }
@@ -1481,6 +1644,20 @@
       );
     }
 
+    // The ways into the flow, so the welcome screen is itself a way in rather
+    // than an instruction to go and find one. Declared starts if there are any,
+    // else whatever nothing leads into.
+    function starts() {
+      if (!entryIds.length) return null;
+      return h('nav', { className: 'slice' },
+        h('div', { className: 'trail-label' },
+          entryIds.length === 1 ? 'Starts here' : entryIds.length + ' ways in'),
+        h('ul', { className: 'nexts' }, entryIds.map(function (id) {
+          return stepRow(id, id, null);
+        }))
+      );
+    }
+
     // Every state of the panel takes the same shape: a title that names the
     // subject, one meta line of secondary facts, then the body it earns.
     function panel() {
@@ -1539,7 +1716,13 @@
         h('div', { className: 'panel-body' },
           f.summary ? paragraphs(f.summary, 'detail') : null,
           linkList(f.links, editor),
-          h('p', { className: 'hint' }, 'Select a node or an edge to see what leads there. Two fingers pan, pinch zooms.'),
+          starts(),
+          h('p', { className: 'hint' },
+            'Select a node or an edge to see what leads there, or walk the flow ' +
+            'with the arrow keys: down and up along it, left and right across a ' +
+            'branch. M shows the minimap, L turns the layout' +
+            (flows.length > 1 ? ', ' + ALT + '1 and up open a tab' : '') +
+            '. Two fingers pan, pinch zooms.'),
           f.problems.length
             ? h('ul', { className: 'problems' }, f.problems.map(function (t, i) {
                 return h('li', { key: i }, t);
@@ -1556,12 +1739,12 @@
     // and inside the ☰ menu on a narrow one. Only one set is ever visible.
     var dirButton = h('button', {
       key: 'dir',
-      onClick: function () { setDir(dir === 'TB' ? 'LR' : 'TB'); setShowMenu(false); }
-    }, dir === 'TB' ? 'Left to right' : 'Top to bottom');
+      onClick: function () { toggleDir(); setShowMenu(false); }
+    }, (dir === 'TB' ? 'Left to right' : 'Top to bottom'), kbd('L'));
     var minimapButton = h('button', {
       key: 'map', className: 'minimap-toggle',
-      onClick: function () { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
-    }, showMap ? 'Hide minimap' : 'Show minimap');
+      onClick: toggleMap
+    }, (showMap ? 'Hide minimap' : 'Show minimap'), kbd('M'));
     // Only worth asking where files should open when there are files.
     var openerSelect = doc.hasFileLinks ? h('select', {
       key: 'opener', className: 'opener', value: editor, 'aria-label': 'Open files in',
@@ -1602,7 +1785,9 @@
                 className: 'tab' + (i === tab ? ' on' : ''),
                 'aria-current': i === tab ? 'page' : null,
                 onClick: function () { openTab(i); }
-              }, fl.title || 'Flow ' + (i + 1));
+              }, (fl.title || 'Flow ' + (i + 1)),
+                // Past nine there is no digit left to press.
+                i < 9 ? kbd(ALT + (i + 1)) : null);
             }))
           : h('h1', { className: 'flow-title' }, f.title || doc.title || 'Flow')),
         h('div', { className: 'controls' },

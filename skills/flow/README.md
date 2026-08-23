@@ -21,7 +21,8 @@ open /tmp/flow-example.html
 `kinds-probe.json` is the one to open after touching `template.html` or
 `vendor.js`: it covers both tabs, fork/join, a state machine, a self-edge, a
 reverse pair, and every edge kind. Click a node and an edge on each tab, check
-the detail panel fills and the path highlights, and watch the console.
+the detail panel fills and the path highlights, walk it with the arrow keys, and
+watch the console.
 
 ## Check the checker
 
