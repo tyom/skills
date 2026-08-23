@@ -63,6 +63,23 @@ H1_SHARE = 1 / 3
 # the one that did not. Both warnings carry their number so a wrong band shows.
 MAX_VG, MAX_DEPTH = 10, 15
 
+# Enough of src/style.css and src/app.js to work out how tall a laid-out flow
+# stands, so the build can say what window opens it whole without one being
+# opened. Change --pad-y, --size, ranksep or the fit there and change these with
+# them. Width is deliberately not modelled: dagre reserves room for every edge
+# spanning more than one rank and spreads the rank to route it, which measured
+# between 2% and 39% wider than the nodes alone.
+RANKSEP, LABELH, HEADER = 56, 20, 45
+FIT_FLOOR, FIT_PAD = 0.7, 0.15
+PAD_Y = {None: 8, "h2": 12, "h1": 20}
+PAD_X = {None: 12, "h2": 16, "h1": 26}
+FONT = {None: 14, "h2": 18, "h1": 26}
+DECISION_PAD = {None: 1, "h2": 2, "h1": 4}
+# Of the font size. app.js measures a node in the DOM because an arrowhead hides
+# under a box that grew past the rect its route aimed at; nothing here is that
+# tight, so it estimates the way app.js already estimates an edge label.
+CHAR, NOTE_H, REF_H, BORDER = 0.52, 20, 19, 2
+
 # A browser cannot ask the OS for "the" editor, and a reader may not use the one
 # the trace was built on, so the page holds every opener and this is only the one
 # it starts on. The names match the openers in template.html.
@@ -229,6 +246,50 @@ def check(flow, root):
     return warnings, bad
 
 
+def node_width(kind, level):
+    return (240 if kind == "decision" else 190) + (140 if level == "h1" else 40 if level == "h2" else 0)
+
+
+def node_height(node):
+    kind, level = node.get("kind", "step"), node.get("level")
+    if kind in ("fork", "join"):
+        return 22
+    # A decision is clipped to a hexagon, so its text sits further in.
+    room = node_width(kind, level) - 2 * (PAD_X[level] + (14 if kind == "decision" else 0))
+    wide, lines, run = CHAR * FONT[level], 1, 0.0
+    for word in (node.get("label") or node["id"]).split():
+        step = len(word) * wide + (wide if run else 0)
+        if run and run + step > room:
+            lines, run = lines + 1, len(word) * wide
+        else:
+            run += step
+    return (2 * PAD_Y[level] + lines * round(FONT[level] * 1.5) + BORDER
+            + (NOTE_H if node.get("note") else 0) + (REF_H if node.get("ref") else 0)
+            + (DECISION_PAD[level] * 2 if kind == "decision" else 0))
+
+
+def window_height(flow, m):
+    """The shortest window that opens this flow whole.
+
+    Below it the fit stops at its zoom floor and the page opens cropped, which
+    the renderer is built for: it holds the view over the graph and gives the
+    reader the minimap and a whole-graph fit. So this is a note, not a limit.
+    """
+    by = collections.defaultdict(list)
+    for node in flow["nodes"]:
+        by[m["rank"][node["id"]]].append(node)
+    ranks = sorted(by)
+    labelled = {e["from"] for e in flow["edges"] if e.get("label")}
+    tall = sum(max(node_height(n) for n in by[r]) for r in ranks)
+    # dagre parts two ranks further when an edge crossing the gap carries a label.
+    tall += sum(RANKSEP + (LABELH if any(n["id"] in labelled for n in by[r]) else 0)
+                for r in ranks[:-1])
+    need = tall * FIT_FLOOR * (1 + FIT_PAD) + HEADER
+    # Rounded up to 50. The estimate ran within 2% of seven laid-out flows, and
+    # rounding up keeps a small under-estimate from reading as "this one fits".
+    return int((need + 49) // 50 * 50)
+
+
 def measure(flow):
     """Two numbers about the flow itself, rather than the window it opens in.
 
@@ -389,7 +450,7 @@ for i, (flow, m) in enumerate(zip(flows, measures)):
     # Two spaces of its own, since a title is the author's text and can be any
     # length; without them a long one runs straight into the number.
     print(f"  {(flow.get('title') or f'flows[{i}]'):<26}  "
-          f"V(G) {m['v']}, {m['depth']} ranks")
+          f"V(G) {m['v']}, {m['depth']} ranks, needs {window_height(flow, m)}px of height")
 
 for i, (flow, (warnings, bad)) in enumerate(zip(flows, reports)):
     if not warnings and not bad:

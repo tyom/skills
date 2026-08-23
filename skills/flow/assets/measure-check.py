@@ -45,6 +45,32 @@ expect("kinds-probe.json", numbers(run("kinds-probe.json")),
        ["V(G) 4, 6 ranks", "V(G) 3, 4 ranks", "V(G) 2, 4 ranks",
         "V(G) 4, 6 ranks", "V(G) 5, 8 ranks"])
 
+# Window heights, each in the same 50px bucket as what dagre actually laid out
+# in a browser: graphs of 520, 384, 344, 554 and 992px, which need windows of
+# 464, 354, 322, 491 and 844px. Hierarchy is the one the estimate under-reads,
+# by 2%, which is why the answer is rounded up rather than to nearest.
+expect("kinds-probe heights", re.findall(r"needs (\d+)px", run("kinds-probe.json")),
+       ["500", "400", "350", "500", "850"])
+
+# Nothing above sits near the width a label wraps at, so the character estimate
+# could be anything and still pass. These two labels were measured in a browser
+# at the plain node width of 190px: "Read the defining authority" takes two
+# lines and stands 79px with a ref, "Record a path:line ref" takes one and
+# stands 58px. Four of the tall one put the total far enough out that a wrong
+# estimate lands in a different 50px bucket.
+WRAP = json.dumps({
+    "title": "labels at the wrap",
+    "nodes": [{"id": "s", "kind": "start", "ref": "SKILL.md:1"}]
+             + [{"id": f"w{i}", "label": "Read the defining authority", "ref": "SKILL.md:1"}
+                for i in range(1, 5)]
+             + [{"id": "r", "label": "Record a path:line ref", "ref": "SKILL.md:1"},
+                {"id": "e", "kind": "end", "ref": "SKILL.md:1"}],
+    "edges": [{"from": a, "to": b} for a, b in
+              zip(["s", "w1", "w2", "w3", "w4", "r"], ["w1", "w2", "w3", "w4", "r", "e"])]})
+# 58 + 79x4 + 58 + 58 of node, six 56px rank gaps, no edge labels: 826px of graph
+# and 710px of window.
+expect("wrapped labels", re.findall(r"needs (\d+)px", run(WRAP)), ["750"])
+
 # A retry edge usually closes a cycle, which the walk breaks anyway, so tagging
 # it only changes the answer when the edge is reached with its target already
 # visited but no longer open. Here `y` is walked after `x` has been popped:
