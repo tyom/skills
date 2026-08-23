@@ -1106,12 +1106,15 @@ import './style.css';
     // Which way the route back goes wherever it has a choice: the walked trail
     // first, then any branch the reader tapped their way onto, which outranks
     // the trail because it is the later word on the same question.
+    function ranking(trail, via) {
+      var rank = Object.create(null);
+      trail.forEach(function (nid, i) { rank[nid] = i; });
+      via.forEach(function (nid, i) { rank[nid] = trail.length + i; });
+      return rank;
+    }
     function preferring(via) {
       if (!trailKey && !via.length) return null;
-      var rank = Object.create(null);
-      if (trailKey) walk.current.trail.forEach(function (nid, i) { rank[nid] = i; });
-      via.forEach(function (nid, i) { rank[nid] = walk.current.trail.length + i; });
-      return rank;
+      return ranking(trailKey ? walk.current.trail : [], via);
     }
 
     // Selecting anything asks the same question: what leads here?
@@ -1417,19 +1420,29 @@ import './style.css';
           }
           // No row to cross means the step is the only way on from what leads
           // here, and the key would do nothing. Where several ways in meet, it
-          // has something better to do: move the route across to the next of
-          // them, the amendment tapping a dim step makes, without leaving here.
+          // has something better to do: cross those instead, moving the route
+          // over to the next of them without leaving the step.
           var ins = ways(here, true);
           var was = pick ? null : cameFrom(here, ins);
           var from = ins.indexOf(was);
           if (from !== -1 && ins.length > 1) {
             var across = ins[(from + (right ? 1 : ins.length - 1)) % ins.length];
-            var amend = (sel.via || []).concat([across]);
+            // Crossing restates how the reader got here, so it restates the
+            // trail: what still leads to the branch they crossed to is kept,
+            // and the rest gives way to the branch itself. Written into the
+            // trail rather than laid over it, or walking on would take the way
+            // in the trail still named and the crossing would not survive the
+            // next step.
+            var keep = walk.current.trail.slice(0, -1);
+            while (keep.length && !(f.outgoing[keep[keep.length - 1]] || [])
+                .some(function (e) { return e.to === across; })) keep.pop();
+            var next = keep.concat([across, here]);
             // Not every way in can be routed through: one that only reaches the
             // step by the way already taken would leave the route as it stands.
-            if (upstream(f, here, preferring(amend)).dist[across] !== undefined) {
+            if (upstream(f, here, ranking(next, [])).dist[across] !== undefined) {
               ev.preventDefault();
-              setSel(Object.assign({}, sel, { via: amend }));
+              walk.current = { at: here, trail: next };
+              setSel({ kind: 'node', id: here });
               return;
             }
           }
