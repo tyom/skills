@@ -1205,13 +1205,20 @@ import './style.css';
     var graphBox = useMemo(function () {
       return rf.getNodesBounds(placedNodes);
     }, [rf, placedNodes]);
-    // Read as a boolean, so a zoom re-renders the header when it crosses the
-    // point where the graph outgrows the pane, not on every step towards it.
+    // Read as a boolean, so a pan or a zoom re-renders the header when it
+    // crosses the point where part of the graph leaves the pane, not on every
+    // step towards it. Fitting inside the pane is not the same as being in it:
+    // a graph smaller than the pane still has a corner off screen once the
+    // reader pans away, and that is exactly when the map is worth having. The
+    // half pixel keeps a fit that lands on the edge from flickering the button.
     // An unmeasured pane is no reason to draw a map over the first paint.
     var overflows = RF.useStore(useCallback(function (s) {
-      return s.width > 0 && s.height > 0 &&
-        (graphBox.width * s.transform[2] > s.width ||
-         graphBox.height * s.transform[2] > s.height);
+      if (!(s.width > 0 && s.height > 0)) return false;
+      var z = s.transform[2];
+      var x = graphBox.x * z + s.transform[0], y = graphBox.y * z + s.transform[1];
+      return x < -0.5 || y < -0.5 ||
+        x + graphBox.width * z > s.width + 0.5 ||
+        y + graphBox.height * z > s.height + 0.5;
     }, [graphBox]));
     var mapOn = showMap && overflows;
 
