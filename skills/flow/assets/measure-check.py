@@ -49,8 +49,9 @@ expect("kinds-probe.json", numbers(probe),
         "V(G) 4, 6 ranks", "V(G) 5, 8 ranks"])
 
 # Window heights, each in the same 50px bucket as what dagre actually laid out
-# in a browser: graphs of 520, 384, 344, 554 and 992px, which need windows of
-# 464, 354, 322, 491 and 844px. Hierarchy is the one the estimate under-reads,
+# in a browser: graphs of 520, 384, 344, 554 and 957px, which need windows of
+# 464, 354, 322, 491 and 815px. Hierarchy shrank from 992px when h1 and h2
+# labels took a tighter leading. Hierarchy is the one the estimate under-reads,
 # by 2%, which is why the answer is rounded up rather than to nearest. A flow
 # with more terminals than any of these has read 4% over, which rounding up
 # cannot help and does not need to.

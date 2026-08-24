@@ -97,10 +97,16 @@
   /* A tab is navigation, not an option: no box, and its indicator sits down on
      the header's own bottom rule so the strip reads as the edge of the canvas. */
   header .tab {
-    align-self: stretch; margin-bottom: -1px; padding: 0 11px;
+    display: flex; align-items: center; align-self: stretch;
+    max-width: 250px; margin-bottom: -1px; padding: 0 11px;
     font-size: 14px; color: var(--muted); background: none;
     border: none; border-bottom: 2px solid transparent; border-radius: 0;
   }
+  /* A long title gives way; the shortcut keeps its place at the end. */
+  header .tab .tab-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  header .tab kbd { flex: none; }
   header .tab:hover { color: var(--ink); border-color: var(--line); }
   header .tab.on { color: var(--ink); font-weight: 500; border-bottom-color: var(--accent); }
   .edge-legend {
@@ -289,7 +295,7 @@
      .node.h1 and .node.h2 set them once instead of restating every shape's
      padding. A kind that wants its own breathing room derives it from --pad-x. */
   .node {
-    --pad-y: 8px; --pad-x: 12px; --size: 14px; --bar: 4px;
+    --pad-y: 8px; --pad-x: 12px; --size: 14px; --bar: 4px; --lh: 1.5;
     border-radius: 8px; text-align: left; cursor: pointer; transition: opacity .15s;
     background: var(--panel); border: 1px solid var(--line);
     border-left: var(--bar) solid var(--step);
@@ -326,7 +332,9 @@
   .react-flow__edge:focus-visible .react-flow__edge-path {
     stroke-width: 4 !important;
   }
-  .node .label { font-weight: 500; font-size: var(--size); }
+  /* Leading tightens as the type grows: 1.5 is right for a 14px label and airy
+     enough at 26px to read as two paragraphs rather than one heading. */
+  .node .label { font-weight: 500; font-size: var(--size); line-height: var(--lh); }
   .node .ref {
     display: flex; margin-top: 2px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -406,8 +414,8 @@
      a box its leading bar, a pill its ring, a hexagon the 1px it wears as one.
      --point is deliberately left alone, so POINT and insetOf still land an
      arrowhead on the same faces at every size. A bar has no level; see levelOf. */
-  .node.h2 { --pad-y: 12px; --pad-x: 16px; --size: 18px; --bar: 5px; }
-  .node.h1 { --pad-y: 20px; --pad-x: 26px; --size: 26px; --bar: 8px; }
+  .node.h2 { --pad-y: 12px; --pad-x: 16px; --size: 18px; --bar: 5px; --lh: 1.25; }
+  .node.h1 { --pad-y: 20px; --pad-x: 26px; --size: 26px; --bar: 8px; --lh: 1.15; }
   .node-state.h2 { border-width: 2px; }
   .node-state.h1 { border-width: 4px; }
   .node-decision.h2 { padding: 2px; }

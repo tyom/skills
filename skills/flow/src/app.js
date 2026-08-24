@@ -1724,8 +1724,10 @@ import './style.css';
                 key: i,
                 className: 'tab' + (i === tab ? ' on' : ''),
                 'aria-current': i === tab ? 'page' : null,
+                // The rail truncates a long title, so the full one lives in the tooltip.
+                title: fl.title || null,
                 onClick: function () { openTab(i); }
-              }, (fl.title || 'Flow ' + (i + 1)),
+              }, h('span', { className: 'tab-label' }, fl.title || 'Flow ' + (i + 1)),
                 // Past nine there is no digit left to press.
                 i < 9 ? kbd(ALT + (i + 1)) : null);
             }))

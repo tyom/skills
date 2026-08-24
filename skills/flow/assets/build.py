@@ -71,13 +71,16 @@ MAX_VG, MAX_DEPTH = 10, 15
 # between 2% and 39% wider than the nodes alone.
 RANKSEP, LABELH, HEADER = 56, 20, 45
 FIT_FLOOR, FIT_PAD = 0.7, 0.15
-# One row per level, so the four numbers that describe a box stay side by side:
-# --pad-y, --pad-x, --size, and the extra a hexagon's point costs.
-LEVEL = {None: (8, 12, 14, 1), "h2": (12, 16, 18, 2), "h1": (20, 26, 26, 4)}
+# One row per level, so the five numbers that describe a box stay side by side:
+# --pad-y, --pad-x, --size, --lh, and the extra a hexagon's point costs.
+LEVEL = {None: (8, 12, 14, 1.5, 1), "h2": (12, 16, 18, 1.25, 2), "h1": (20, 26, 26, 1.15, 4)}
 # Of the font size. app.js measures a node in the DOM because an arrowhead hides
 # under a box that grew past the rect its route aimed at; nothing here is that
 # tight, so it estimates the way app.js already estimates an edge label.
 CHAR, NOTE_H, REF_H, BORDER = 0.52, 20, 19, 2
+# A state node thickens its ring with the level, so its border is not the 1px
+# every other kind wears: .node-state.h2 is 2px and .node-state.h1 is 4px.
+STATE_BORDER = {None: 2, "h2": 4, "h1": 8}
 
 # A browser cannot ask the OS for "the" editor, and a reader may not use the one
 # the trace was built on, so the page holds every opener and this is only the one
@@ -266,7 +269,7 @@ def node_height(node):
     # An unknown level is a problem check() already reports, and node_width and
     # the renderer's levelOf both read it as the base node. Estimating it the
     # same way keeps that report reachable instead of raising over it.
-    pad_y, pad_x, font, point = LEVEL.get(level, LEVEL[None])
+    pad_y, pad_x, font, lh, point = LEVEL.get(level, LEVEL[None])
     # A decision is clipped to a hexagon, so its text sits further in.
     room = node_width(kind, level) - 2 * (pad_x + (14 if kind == "decision" else 0))
     wide, lines, run = CHAR * font, 1, 0.0
@@ -276,7 +279,8 @@ def node_height(node):
             lines, run = lines + 1, len(word) * wide
         else:
             run += step
-    return (2 * pad_y + lines * round(font * 1.5) + BORDER
+    border = STATE_BORDER[level] if kind == "state" and level in STATE_BORDER else BORDER
+    return (2 * pad_y + lines * round(font * lh) + border
             + (NOTE_H if node.get("note") else 0) + (REF_H if node.get("ref") else 0)
             + (point * 2 if kind == "decision" else 0))
 
