@@ -118,7 +118,8 @@ def resolve_file(root, path, line, noun, where, warnings):
         warnings.append((f"{noun} line past end", f"{where}: {shown}"))
     if not (inside and f.is_file()):
         return None
-    return {"abs": str(f), "line": int(line) if line else 1}
+    # A ref may carry `:0`, which is a digit and no line. Openers count from 1.
+    return {"abs": str(f), "line": max(int(line or 1), 1)}
 
 
 def resolve_links(owner, where, root, warnings):
@@ -262,7 +263,10 @@ def node_height(node):
     kind, level = node.get("kind", "step"), node.get("level")
     if kind in ("fork", "join"):
         return 22
-    pad_y, pad_x, font, point = LEVEL[level]
+    # An unknown level is a problem check() already reports, and node_width and
+    # the renderer's levelOf both read it as the base node. Estimating it the
+    # same way keeps that report reachable instead of raising over it.
+    pad_y, pad_x, font, point = LEVEL.get(level, LEVEL[None])
     # A decision is clipped to a hexagon, so its text sits further in.
     room = node_width(kind, level) - 2 * (pad_x + (14 if kind == "decision" else 0))
     wide, lines, run = CHAR * font, 1, 0.0

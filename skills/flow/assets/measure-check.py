@@ -76,6 +76,25 @@ WRAP = json.dumps({
 # and 710px of window.
 expect("wrapped labels", re.findall(r"needs (\d+)px", run(WRAP)), ["750"])
 
+# An unknown level is a problem, and the report naming it is printed after the
+# measurement, so measuring has to survive the level rather than raise over it.
+# The renderer draws such a node at the base size, so the estimate has to agree:
+# the same flow with the level dropped is the independent answer.
+def levelled(level):
+    return json.dumps({
+        "title": "unknown level",
+        "nodes": [{"id": "s", "kind": "start"},
+                  {"id": "n", "label": "Read the defining authority",
+                   **({"level": level} if level else {})},
+                  {"id": "e", "kind": "end"}],
+        "edges": [{"from": "s", "to": "n"}, {"from": "n", "to": "e"}]})
+
+
+odd = run(levelled("h3"))
+expect("unknown level measured", re.findall(r"needs (\d+)px", odd),
+       re.findall(r"needs (\d+)px", run(levelled(None))))
+expect("unknown level reported", "unknown node level" in odd, True)
+
 # A retry edge usually closes a cycle, which the walk breaks anyway, so tagging
 # it only changes the answer when the edge is reached with its target already
 # visited but no longer open. Here `y` is walked after `x` has been popped:
