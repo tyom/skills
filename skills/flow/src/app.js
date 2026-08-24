@@ -1202,9 +1202,21 @@ import './style.css';
     // The minimap answers where the reader stands in a graph that runs past the
     // pane. While all of it is on screen the map only repeats what is already
     // there, so it stays away and its button goes quiet with it.
+    // Measured off the layout, not off React Flow: on a tab switch its store
+    // still holds the flow being left, so getNodesBounds answered for the old
+    // graph — or for nothing — and the map went quiet on a graph that runs off
+    // the pane until the page was reloaded. Every node here carries the size
+    // dagre laid it out at, so the box is arithmetic and true on first render.
     var graphBox = useMemo(function () {
-      return rf.getNodesBounds(placedNodes);
-    }, [rf, placedNodes]);
+      var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      placedNodes.forEach(function (n) {
+        left = Math.min(left, n.position.x);
+        top = Math.min(top, n.position.y);
+        right = Math.max(right, n.position.x + n.width);
+        bottom = Math.max(bottom, n.position.y + n.height);
+      });
+      return { x: left, y: top, width: right - left, height: bottom - top };
+    }, [placedNodes]);
     // Read as a boolean, so a pan or a zoom re-renders the header when it
     // crosses the point where part of the graph leaves the pane, not on every
     // step towards it. Fitting inside the pane is not the same as being in it:
