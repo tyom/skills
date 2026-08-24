@@ -50,7 +50,9 @@
     align-self: center; color: var(--ink); background: var(--bg);
     border: 1px solid var(--line); border-radius: 6px;
   }
-  header button:hover { border-color: var(--accent); }
+  header button:hover:not(:disabled) { border-color: var(--accent); }
+  /* A control with nothing to do stays in place rather than moving the row. */
+  header button:disabled { opacity: .4; cursor: default; }
   /* The shortcut rides at the end of the label, quiet enough to read past. */
   header button kbd {
     font: inherit; font-size: 10px; margin-left: 6px; padding: 1px 4px;

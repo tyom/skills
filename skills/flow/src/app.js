@@ -1199,6 +1199,22 @@ import './style.css';
     var rf = RF.useReactFlow();
     var paneW = RF.useStore(function (s) { return s.width; });
     var paneH = RF.useStore(function (s) { return s.height; });
+    // The minimap answers where the reader stands in a graph that runs past the
+    // pane. While all of it is on screen the map only repeats what is already
+    // there, so it stays away and its button goes quiet with it.
+    var graphBox = useMemo(function () {
+      return rf.getNodesBounds(placedNodes);
+    }, [rf, placedNodes]);
+    // Read as a boolean, so a zoom re-renders the header when it crosses the
+    // point where the graph outgrows the pane, not on every step towards it.
+    // An unmeasured pane is no reason to draw a map over the first paint.
+    var overflows = RF.useStore(useCallback(function (s) {
+      return s.width > 0 && s.height > 0 &&
+        (graphBox.width * s.transform[2] > s.width ||
+         graphBox.height * s.transform[2] > s.height);
+    }, [graphBox]));
+    var mapOn = showMap && overflows;
+
     function fitReadable(whole, animate) {
       var duration = animate && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 0;
       // Turning the layout is the question of whether the flow reads better the
@@ -1320,7 +1336,13 @@ import './style.css';
     // Both toggles are reachable from the header and from a key, and neither
     // reading may drift from the other. The button carries its key, so the
     // shortcut is discoverable without a legend of its own.
-    function toggleMap() { save(MAP_KEY, showMap ? '0' : '1'); setShowMap(!showMap); }
+    // Nothing to show and nothing to hide while the whole graph is in the pane;
+    // the button is disabled there and the key follows it.
+    function toggleMap() {
+      if (!overflows) return;
+      save(MAP_KEY, showMap ? '0' : '1');
+      setShowMap(!showMap);
+    }
     function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
 
     // Down walks the flow forward, up walks it back, and left/right cross the
@@ -1483,7 +1505,7 @@ import './style.css';
 
       addEventListener('keydown', onKey);
       return function () { removeEventListener('keydown', onKey); };
-    }, [f, sel, lit, placed, dir, entryIds, startId, rf, showMap]);
+    }, [f, sel, lit, placed, dir, entryIds, startId, rf, showMap, overflows]);
 
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect refits the new graph.
@@ -1654,8 +1676,10 @@ import './style.css';
     }, (dir === 'TB' ? 'Left to right' : 'Top to bottom'), kbd('L'));
     var minimapButton = h('button', {
       key: 'map', className: 'minimap-toggle',
+      disabled: !overflows,
+      title: overflows ? null : 'The whole flow is already on screen',
       onClick: toggleMap
-    }, (showMap ? 'Hide minimap' : 'Show minimap'), kbd('M'));
+    }, (mapOn ? 'Hide minimap' : 'Show minimap'), kbd('M'));
     // Only worth asking where files should open when there are files.
     var openerSelect = doc.hasFileLinks ? h('select', {
       key: 'opener', className: 'opener', value: editor, 'aria-label': 'Open files in',
@@ -1784,7 +1808,7 @@ import './style.css';
             minZoom: 0.1
           },
             h(RF.Controls, { showInteractive: false }),
-            showMap ? h(RF.MiniMap, {
+            mapOn ? h(RF.MiniMap, {
               pannable: true, zoomable: true, nodeColor: nodeColorOf
             }) : null,
             // Only a narrow screen hides the panel, so only a narrow screen
