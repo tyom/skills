@@ -137,6 +137,12 @@ import './style.css';
     try { localStorage.setItem(key, v); } catch (e) { /* no store */ }
   }
 
+  // A page inside someone else's frame — a chat client's file preview — is not
+  // allowed to save a file: the frame is sandboxed without allow-downloads, the
+  // export runs and the browser drops it with nothing the page can catch. So the
+  // button is not offered there. Open the file in a tab and it comes back.
+  var EMBEDDED = window.self !== window.top;
+
   // Lowercase, punctuation to hyphens, no hyphen at either end. Names both the
   // downloaded file and the hash a tab answers to, which have to agree on what
   // a title reduces to.
@@ -680,6 +686,11 @@ import './style.css';
     return p;
   }
 
+  // How far a self-loop can reach past the face it leaves: LOOPGAP, then the
+  // arc's own out, which is half the widest node and a little more; see the
+  // loop data on an edge and loopPath.
+  var LOOPSPAN = 400;
+
   function layout(nodes, edges, dir) {
     // A multigraph, so two edges between the same pair stay two edges — they get
     // their own route and their own label slot instead of sharing one.
@@ -726,6 +737,16 @@ import './style.css';
     });
 
     return {
+      // Every edge draws into its own <svg> that keeps the browser's default
+      // box and paints outside it, which a viewer is free to clip: a chat
+      // client showing the page in its own frame draws no line at all. So the
+      // boxes are stretched over the graph, and the spill is only a fallback.
+      // dagre's own size covers the routes; a self-loop is not in the graph it
+      // measured and bows out past the node it leaves, hence LOOPSPAN.
+      box: {
+        w: g.graph().width + LOOPSPAN,
+        h: g.graph().height + LOOPSPAN
+      },
       routes: routes,
       nodes: nodes.map(function (n) {
         // dagre leaves a leaf node's declared size alone, so read it back
@@ -1687,7 +1708,7 @@ import './style.css';
           : h('h1', { className: 'flow-title' }, f.title || doc.title || 'Flow')),
         h('div', { className: 'controls' },
           dirButton, minimapButton, openerSelect,
-          h('div', { className: 'export', ref: exportRef },
+          EMBEDDED ? null : h('div', { className: 'export', ref: exportRef },
             h('button', {
               'aria-expanded': showExport, 'aria-controls': 'export-options',
               onClick: function () { setShowExport(!showExport); }
@@ -1741,6 +1762,12 @@ import './style.css';
         },
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
+            // On the flow itself, not the canvas around it: the export clones
+            // this element, and the edge boxes are sized off these.
+            style: {
+              '--edge-box-w': laidOut.box.w + 'px',
+              '--edge-box-h': laidOut.box.h + 'px'
+            },
             nodesDraggable: false,
             // The walk pans for itself, and it animates; React Flow's own pan
             // on focus would jump there first and leave nothing to animate.
@@ -1806,6 +1833,22 @@ import './style.css';
     );
   }
 
-  ReactDOM.createRoot(document.getElementById('root'))
-    .render(h(RF.ReactFlowProvider, null, h(App, null)));
+  // A container with no box yet — an iframe a chat client has not shown, a
+  // panel that opens later — measures every node at 0, and the layout is built
+  // on those zeros: nodes overlap, no edge is drawn and the view never fits.
+  // Nothing re-runs when the box arrives, so wait for it before mounting.
+  var mountPoint = document.getElementById('root');
+  function mount() {
+    ReactDOM.createRoot(mountPoint)
+      .render(h(RF.ReactFlowProvider, null, h(App, null)));
+  }
+  if (mountPoint.offsetHeight) mount();
+  else {
+    var waiting = new ResizeObserver(function () {
+      if (!mountPoint.offsetHeight) return;
+      waiting.disconnect();
+      mount();
+    });
+    waiting.observe(mountPoint);
+  }
 })();
