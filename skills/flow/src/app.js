@@ -1862,14 +1862,15 @@ import './style.css';
   // on those zeros: nodes overlap, no edge is drawn and the view never fits.
   // Nothing re-runs when the box arrives, so wait for it before mounting.
   var mountPoint = document.getElementById('root');
+  function boxed() { return mountPoint.offsetWidth > 0 && mountPoint.offsetHeight > 0; }
   function mount() {
     ReactDOM.createRoot(mountPoint)
       .render(h(RF.ReactFlowProvider, null, h(App, null)));
   }
-  if (mountPoint.offsetHeight) mount();
+  if (boxed()) mount();
   else {
     var waiting = new ResizeObserver(function () {
-      if (!mountPoint.offsetHeight) return;
+      if (!boxed()) return;
       waiting.disconnect();
       mount();
     });
