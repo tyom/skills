@@ -50,7 +50,9 @@
     align-self: center; color: var(--ink); background: var(--bg);
     border: 1px solid var(--line); border-radius: 6px;
   }
-  header button:hover { border-color: var(--accent); }
+  header button:hover:not(:disabled) { border-color: var(--accent); }
+  /* A control with nothing to do stays in place rather than moving the row. */
+  header button:disabled { opacity: .4; cursor: default; }
   /* The shortcut rides at the end of the label, quiet enough to read past. */
   header button kbd {
     font: inherit; font-size: 10px; margin-left: 6px; padding: 1px 4px;
@@ -301,6 +303,18 @@
     box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   }
   .node.dim { opacity: .22; }
+  /* React Flow gives each edge an <svg> of its own, leaves it at the browser's
+     default 300x150 and lets the line paint outside it. Two things a host page
+     does to that: clip the overflow, and clamp the box. A responsive reset --
+     svg { max-width: 100% } -- is the second, and the container these sit in is
+     0 wide, so the clamp takes the box to 0 and an svg with no width renders
+     nothing at all. Hence a box of its own, over the whole graph, and no clamp:
+     the reset is someone else's stylesheet, so it has to be overruled outright.
+     layout() measures the box. */
+  .react-flow__edges svg {
+    width: var(--edge-box-w); height: var(--edge-box-h);
+    max-width: none !important; max-height: none !important;
+  }
   .react-flow__edge { transition: opacity .15s; }
   .react-flow__edge.dim { opacity: .1; }
   .react-flow__node:focus-visible .node {

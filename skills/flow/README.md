@@ -38,6 +38,11 @@ Several related flows become tabs in one file. Arrow keys walk the graph, `L`
 turns the layout, `M` shows the minimap, and the page exports to SVG or PNG. No
 server, no network, one file you can email.
 
+Inside a chat client's own preview the page is an iframe, and a sandboxed iframe
+is not allowed to save a file: the export runs and the download is dropped with
+no error. The page hides the export button in any frame it does not own; open
+the file in a tab of its own and the button is back.
+
 The build refuses to be quiet about a broken graph. A path that stops without a
 terminal, a decision with one way out, an unlabelled decision edge, an edge
 pointing at a missing id: each is a fault, printed and exited non-zero. A ref
