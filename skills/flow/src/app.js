@@ -123,19 +123,29 @@ import './style.css';
   // Closes over nothing, so the minimap's memoised nodes keep their identity.
   function nodeColorOf(n) { return KIND_COLOR[n.data.kind]; }
 
-  // Private to whoever opens the page, and absent in a locked-down browser.
+  // Private to whoever opens the page, and absent in a locked-down browser, so
+  // every read answers with the fallback and every write is allowed to do
+  // nothing. Both settings below go through these rather than guarding again.
   var MAP_KEY = 'flow:minimap';
-  function readToggle(key) {
-    try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; }
+  function load(key, fallback) {
+    try {
+      var v = localStorage.getItem(key);
+      return v === null ? fallback : v;
+    } catch (e) { return fallback; }
   }
-  function writeToggle(key, on) {
-    try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* no store */ }
+  function save(key, v) {
+    try { localStorage.setItem(key, v); } catch (e) { /* no store */ }
   }
 
-  function fileName(title, ext) {
-    var base = (title || 'flow').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    return (base || 'flow') + '.' + ext;
+  // Lowercase, punctuation to hyphens, no hyphen at either end. Names both the
+  // downloaded file and the hash a tab answers to, which have to agree on what
+  // a title reduces to.
+  function slug(text, fallback) {
+    return (text || fallback).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
   }
+
+  function fileName(title, ext) { return slug(title, 'flow') + '.' + ext; }
 
   function download(blob, name) {
     var url = URL.createObjectURL(blob);
@@ -147,9 +157,9 @@ import './style.css';
 
   function exportBounds(nodes, root) {
     var box = nodes.reduce(function (b, n) {
-      var w = n.width || n.data.width || 0, ht = n.height || n.data.height || 0;
+      // layout() declares both on every node, so there is nothing to fall back to.
       b.x1 = Math.min(b.x1, n.position.x); b.y1 = Math.min(b.y1, n.position.y);
-      b.x2 = Math.max(b.x2, n.position.x + w); b.y2 = Math.max(b.y2, n.position.y + ht);
+      b.x2 = Math.max(b.x2, n.position.x + n.width); b.y2 = Math.max(b.y2, n.position.y + n.height);
       return b;
     }, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
     root.querySelectorAll('.react-flow__edge').forEach(function (edge) {
@@ -288,8 +298,7 @@ import './style.css';
   var usedTabIds = Object.create(null);
   var tabIds = flows.map(function (f, i) {
     var fallback = 'flow-' + (i + 1);
-    var base = (f.title || fallback).toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
+    var base = slug(f.title, fallback);
     // Two flows can share a title, and the hash has to address one tab only.
     var id = base, n = i;
     while (usedTabIds[id]) id = base + '-' + (++n);
@@ -323,25 +332,47 @@ import './style.css';
     var seen = Object.create(null), via = Object.create(null);
     var queue = [nodeId], far = nodeId, start = null;
     seen[nodeId] = true;
+    function claim(e) {
+      seen[e.from] = true;
+      via[e.from] = e;
+      queue.push(e.from);
+      far = e.from;
+      // The nearest start is where a reader would begin, so it wins over the
+      // furthest node, which in a loop is only the long way round.
+      if (!start && kindOf((f.nodeById[e.from] || {}).kind) === 'start') start = e.from;
+    }
+
+    // The trail is a route, not a preference to apply at each fork. A search by
+    // shortest hop would claim a step the reader passed through by whatever
+    // short way also reaches it, and the detour they actually walked would drop
+    // out of the route between. So the trail is laid down first and whole,
+    // latest step first, and the search below only fills in what it left.
+    var on = nodeId;
+    while (prefer) {
+      var next = null;
+      waysIn(f, on).forEach(function (e) {
+        if (seen[e.from] || rankOf(e) < 0) return;
+        if (!next || rankOf(e) > rankOf(next)) next = e;
+      });
+      if (!next) break;
+      claim(next);
+      on = next.from;
+    }
+    // The search picks up where the trail ran out, and nowhere else. Left to
+    // start from the selection it would reach back over the steps just laid
+    // down and claim their parents by whatever shorter way also arrives, and
+    // the route would read past the trail rather than through it.
+    if (prefer) queue = [on];
+
     while (queue.length) {
       var cur = queue.shift();
       var ways = waysIn(f, cur);
-      // Ways the reader has already walked are taken first, latest first, so
-      // the route back follows the trail wherever it still has one and falls
-      // back to the declared order only where it does not.
+      // Off the trail the route falls back to the declared order, latest
+      // preference first where a branch was tapped onto rather than walked.
       if (prefer) {
         ways = ways.slice().sort(function (a, b) { return rankOf(b) - rankOf(a); });
       }
-      ways.forEach(function (e) {
-        if (seen[e.from]) return;
-        seen[e.from] = true;
-        via[e.from] = e;
-        queue.push(e.from);
-        far = e.from;
-        // The nearest start is where a reader would begin, so it wins over the
-        // furthest node, which in a loop is only the long way round.
-        if (!start && kindOf((f.nodeById[e.from] || {}).kind) === 'start') start = e.from;
-      });
+      ways.forEach(function (e) { if (!seen[e.from]) claim(e); });
     }
 
     // via[x] is the edge out of x towards nodeId, so following it always closes
@@ -428,6 +459,19 @@ import './style.css';
     return { edges: edges, dist: dist, via: via, fanIn: fanIn };
   }
 
+  // Whether an edge between two lit nodes is drawn as well. Most are: an added
+  // parent hangs off the route instead of floating, a second edge between the
+  // same pair lights beside the first, and the loop home lights when both its
+  // ends are on show. Not one that jumps forward over a step of the route,
+  // though — it arrives where the route already arrives, having missed out what
+  // the route went through, and it reads as a second way in. A step hung off
+  // the route stands at -1 and is no part of that, or the edge hanging it there
+  // would be read as a jump and go dim.
+  function alongRoute(dist, e) {
+    if (dist[e.from] === undefined || dist[e.to] === undefined) return false;
+    return !(dist[e.to] >= 0 && dist[e.from] > dist[e.to] + 1);
+  }
+
   // Furthest hop first, so the list reads start-to-here.
   function stepsInto(lit, minDist) {
     return Object.keys(lit.dist)
@@ -482,10 +526,10 @@ import './style.css';
     cursor: { label: 'Cursor', url: fileScheme('cursor') },
     windsurf: { label: 'Windsurf', url: fileScheme('windsurf') },
     zed: { label: 'Zed', url: fileScheme('zed') },
-    sublime: { label: 'Sublime Text', url: urlQuery('subl') },
-    textmate: { label: 'TextMate', url: urlQuery('txmt') },
-    webstorm: { label: 'WebStorm', url: jetbrainsScheme('webstorm') },
-    idea: { label: 'IntelliJ IDEA', url: jetbrainsScheme('idea') },
+    sublime: { label: 'Sublime Text', url: openQuery('subl', 'url', 'file://') },
+    textmate: { label: 'TextMate', url: openQuery('txmt', 'url', 'file://') },
+    webstorm: { label: 'WebStorm', url: openQuery('webstorm', 'file', '') },
+    idea: { label: 'IntelliJ IDEA', url: openQuery('idea', 'file', '') },
     copy: { label: 'Copy path:line', url: null }
   };
 
@@ -500,24 +544,18 @@ import './style.css';
     return function (l) { return scheme + '://file' + encodePath(l.abs) + ':' + l.line; };
   }
 
-  function urlQuery(scheme) {
+  // Both families open by query string and differ only in what they call the
+  // path: url= wants a file:// URL, JetBrains' file= wants the bare path.
+  function openQuery(scheme, key, prefix) {
     return function (l) {
-      return scheme + '://open?url=file://' + encodePath(l.abs) + '&line=' + l.line;
-    };
-  }
-
-  function jetbrainsScheme(scheme) {
-    return function (l) {
-      return scheme + '://open?file=' + encodePath(l.abs) + '&line=' + l.line;
+      return scheme + '://open?' + key + '=' + prefix + encodePath(l.abs) + '&line=' + l.line;
     };
   }
 
   var EDITOR_KEY = 'flow:editor';
   function readEditor() {
-    try {
-      var saved = localStorage.getItem(EDITOR_KEY);
-      if (saved && OPENERS[saved]) return saved;
-    } catch (e) { /* no store */ }
+    var saved = load(EDITOR_KEY, '');
+    if (OPENERS[saved]) return saved;
     return OPENERS[doc.editor] ? doc.editor : 'vscode';
   }
 
@@ -990,7 +1028,7 @@ import './style.css';
     var tabState = useState(tabFromHash), tab = tabState[0], setTab = tabState[1];
     var dirState = useState('TB'), dir = dirState[0], setDir = dirState[1];
     var selState = useState(null), sel = selState[0], setSel = selState[1];
-    var mapState = useState(function () { return readToggle(MAP_KEY); });
+    var mapState = useState(function () { return load(MAP_KEY, '1') !== '0'; });
     var showMap = mapState[0], setShowMap = mapState[1];
     var exportState = useState(false), showExport = exportState[0], setShowExport = exportState[1];
     var menuState = useState(false), showMenu = menuState[0], setShowMenu = menuState[1];
@@ -1071,12 +1109,15 @@ import './style.css';
     // Which way the route back goes wherever it has a choice: the walked trail
     // first, then any branch the reader tapped their way onto, which outranks
     // the trail because it is the later word on the same question.
+    function ranking(trail, via) {
+      var rank = Object.create(null);
+      trail.forEach(function (nid, i) { rank[nid] = i; });
+      via.forEach(function (nid, i) { rank[nid] = trail.length + i; });
+      return rank;
+    }
     function preferring(via) {
       if (!trailKey && !via.length) return null;
-      var rank = Object.create(null);
-      if (trailKey) walk.current.trail.forEach(function (nid, i) { rank[nid] = i; });
-      via.forEach(function (nid, i) { rank[nid] = walk.current.trail.length + i; });
-      return rank;
+      return ranking(trailKey ? walk.current.trail : [], via);
     }
 
     // Selecting anything asks the same question: what leads here?
@@ -1103,16 +1144,12 @@ import './style.css';
               up.dist[e.from] === undefined) up.dist[e.from] = -1;
         });
       }
-      // Then every edge between two lit nodes, in either direction. Which nodes
+      // Then the edges between two lit nodes, in either direction. Which nodes
       // light is already settled above, so this only draws what runs between
-      // them: an added parent hangs off the route instead of floating, a second
-      // edge between the same pair lights beside the first, and the loop home
-      // lights when both its ends are on show. A dim node keeps its edges dim,
-      // which is what holds the loop back in the first place.
+      // them; see alongRoute for which of those count. A dim node keeps its
+      // edges dim, which is what holds the loop back in the first place.
       f.edgeItems.forEach(function (e) {
-        if (up.dist[e.from] !== undefined && up.dist[e.to] !== undefined) {
-          up.edges[e.id] = true;
-        }
+        if (alongRoute(up.dist, e)) up.edges[e.id] = true;
       });
 
       if (sel.kind === 'edge') {
@@ -1262,14 +1299,16 @@ import './style.css';
     // Both toggles are reachable from the header and from a key, and neither
     // reading may drift from the other. The button carries its key, so the
     // shortcut is discoverable without a legend of its own.
-    function toggleMap() { writeToggle(MAP_KEY, !showMap); setShowMap(!showMap); }
+    function toggleMap() { save(MAP_KEY, showMap ? '0' : '1'); setShowMap(!showMap); }
     function toggleDir() { setDir(dir === 'TB' ? 'LR' : 'TB'); }
 
     // Down walks the flow forward, up walks it back, and left/right cross the
-    // other ways out of the step above. Each press reads the graph as it stands
-    // rather than a walked route, so down after up lands on the first way on,
-    // not the branch it came up from; left and right are how a reader crosses
-    // back to it.
+    // other ways out of the step above, or where there are none, the other ways
+    // into the step itself. Down reads the graph as it stands, so
+    // down after up lands on the first way on, not the branch it came up from;
+    // left and right are how a reader crosses back to it. Up is the one that
+    // follows the route already lit, since that route is what the diagram and
+    // the panel both say leads here.
     useEffect(function () {
       // The sideways axis is whichever one the layout is not running down, so
       // the order left/right moves in is the order the eye reads.
@@ -1284,6 +1323,28 @@ import './style.css';
         return unique(edges.map(function (e) { return back ? e.from : e.to; }))
           .filter(function (other) { return other !== id; })
           .sort(byAxis);
+      }
+
+      // The way in that is lit: the branch a reader came down, tapped onto, or
+      // the declared first where they did neither. A join has several, so the
+      // step actually walked from wins over the rest.
+      function cameFrom(id, open) {
+        if (!lit) return null;
+        var on = open.filter(function (p) {
+          return lit.via[p] && lit.via[p].to === id;
+        });
+        var trail = walk.current.trail, was = trail[trail.length - 2];
+        return on.indexOf(was) !== -1 ? was : on[0] || null;
+      }
+
+      // Focus follows the walk. React Flow makes every node focusable, so a ring
+      // left behind on the step they came from reads as a second selection, and
+      // a reader who tabs in and then walks would tab back to where they began.
+      function focusNode(id) {
+        var el = document.querySelector(
+          '.react-flow__node[data-id="' + CSS.escape(id) + '"]');
+        // The pan below is the one that decides what is on screen.
+        if (el) el.focus({ preventScroll: true });
       }
 
       // A step walked to off-screen leaves the panel describing something the
@@ -1347,7 +1408,7 @@ import './style.css';
               setSel(null);
               return;
             }
-            pick = open[0];
+            pick = (up && cameFrom(here, open)) || open[0];
           }
         } else if (here !== null) {
           // Siblings are the other ways out of whatever leads here. Entries have
@@ -1360,6 +1421,34 @@ import './style.css';
           if (at !== -1 && row.length > 1) {
             pick = row[(at + (right ? 1 : row.length - 1)) % row.length];
           }
+          // No row to cross means the step is the only way on from what leads
+          // here, and the key would do nothing. Where several ways in meet, it
+          // has something better to do: cross those instead, moving the route
+          // over to the next of them without leaving the step.
+          var ins = ways(here, true);
+          var was = pick ? null : cameFrom(here, ins);
+          var from = ins.indexOf(was);
+          if (from !== -1 && ins.length > 1) {
+            var across = ins[(from + (right ? 1 : ins.length - 1)) % ins.length];
+            // Crossing restates how the reader got here, so it restates the
+            // trail: what still leads to the branch they crossed to is kept,
+            // and the rest gives way to the branch itself. Written into the
+            // trail rather than laid over it, or walking on would take the way
+            // in the trail still named and the crossing would not survive the
+            // next step.
+            var keep = walk.current.trail.slice(0, -1);
+            while (keep.length && !(f.outgoing[keep[keep.length - 1]] || [])
+                .some(function (e) { return e.to === across; })) keep.pop();
+            var next = keep.concat([across, here]);
+            // Not every way in can be routed through: one that only reaches the
+            // step by the way already taken would leave the route as it stands.
+            if (upstream(f, here, ranking(next, [])).dist[across] !== undefined) {
+              ev.preventDefault();
+              walk.current = { at: here, trail: next };
+              setSel({ kind: 'node', id: here });
+              return;
+            }
+          }
         }
         if (!pick) return;
 
@@ -1367,12 +1456,13 @@ import './style.css';
         // still scrolls the page.
         ev.preventDefault();
         setSel({ kind: 'node', id: pick });
+        focusNode(pick);
         reveal(pick);
       }
 
       addEventListener('keydown', onKey);
       return function () { removeEventListener('keydown', onKey); };
-    }, [f, sel, placed, dir, entryIds, startId, rf, showMap]);
+    }, [f, sel, lit, placed, dir, entryIds, startId, rf, showMap]);
 
     // The hash is what says which tab is open; the hashchange listener above
     // clears the selection, and the relayout effect refits the new graph.
@@ -1519,7 +1609,8 @@ import './style.css';
             // No keyboard on the screen that hides these controls anyway.
             h('span', { className: 'keys-only' },
               'Or walk the flow with the arrow keys: down and up along it, left ' +
-              'and right across a branch. M shows the minimap, L turns the layout' +
+              'and right across a branch, or across the ways in where there is ' +
+              'no branch. M shows the minimap, L turns the layout' +
               (flows.length > 1 ? ', ' + ALT + '1 and up open a tab' : '') + '. '),
             'Two fingers pan and pinch zooms. Double-click blank space to refit.'),
           f.problems.length
@@ -1549,7 +1640,7 @@ import './style.css';
       key: 'opener', className: 'opener', value: editor, 'aria-label': 'Open files in',
       onChange: function (ev) {
         setEditor(ev.target.value);
-        try { localStorage.setItem(EDITOR_KEY, ev.target.value); } catch (e) { /* no store */ }
+        save(EDITOR_KEY, ev.target.value);
       }
       // The closed control shows a bare editor name; the group heading is what
       // says what picking one does, and it costs no room in the header.
@@ -1651,6 +1742,9 @@ import './style.css';
           h(RF.ReactFlow, {
             nodes: nodes, edges: edges, nodeTypes: nodeTypes, edgeTypes: edgeTypes,
             nodesDraggable: false,
+            // The walk pans for itself, and it animates; React Flow's own pan
+            // on focus would jump there first and leave nothing to animate.
+            autoPanOnNodeFocus: false,
             onNodeClick: onNodeClick, onEdgeClick: onEdgeClick,
             onPaneClick: function () { setSel(null); },
             fitView: true, fitViewOptions: FIT,

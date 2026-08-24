@@ -67,7 +67,7 @@ unlink_one() {
 }
 
 # ~/.claude/skills → "claude"; shown only when the dirs disagree about a skill.
-dir_label() { local p; p=$(basename "$(dirname "$1")"); echo "${p#.}"; }
+dir_label() { local p="${1%/*}"; p="${p##*/}"; echo "${p#.}"; }
 short() { echo "${1/#$HOME/\~}"; }
 
 # One row per skill across all dirs; ABSENT_PAIRS collects "dir name" to link.
@@ -83,16 +83,13 @@ cmd_status() {
       GLOBAL="$d"; st=$(state_of "$n"); sts+=("$st")
       [ "$st" = absent ] && ABSENT_PAIRS+=("$d $n")
     done
-    same=1; i=1
-    while [ $i -lt ${#sts[@]} ]; do
-      [ "${sts[$i]}" = "${sts[0]}" ] || same=0; i=$((i + 1))
-    done
+    same=1
+    for st in "${sts[@]}"; do [ "$st" = "${sts[0]}" ] || same=0; done
     if [ $same -eq 1 ]; then
       render "${sts[0]}" "$n"
     else
-      i=0
-      while [ $i -lt ${#sts[@]} ]; do
-        render "${sts[$i]}" "$n $D($(dir_label "${SKILL_DIRS[$i]}"))$R"; i=$((i + 1))
+      for i in "${!SKILL_DIRS[@]}"; do
+        render "${sts[$i]}" "$n $D($(dir_label "${SKILL_DIRS[$i]}"))$R"
       done
     fi
     case " ${sts[*]} " in *" absent "*) ABSENT_COUNT=$((ABSENT_COUNT + 1)) ;; esac
@@ -144,13 +141,13 @@ case "$cmd" in
     case $reply in
       [yY]*)
         for GLOBAL in "${SKILL_DIRS[@]}"; do
-          names=""
+          names=()
           for pair in "${ABSENT_PAIRS[@]}"; do
-            [ "${pair% *}" = "$GLOBAL" ] && names="$names ${pair##* }"
+            if [ "${pair% *}" = "$GLOBAL" ]; then names+=("${pair##* }"); fi
           done
-          [ -n "$names" ] || continue
+          [ ${#names[@]} -gt 0 ] || continue
           printf '\n%s%s%s\n' "$D" "$(short "$GLOBAL")" "$R"
-          cmd_link $names  # unquoted: split on spaces
+          cmd_link "${names[@]}"
         done ;;
     esac ;;
   link|unlink)
