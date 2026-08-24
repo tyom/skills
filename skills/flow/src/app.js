@@ -1733,7 +1733,7 @@ import './style.css';
                 id: 'flow-options', className: 'export-menu', role: 'group',
                 'aria-label': 'Flow options'
               },
-                dirButton, openerSelect, exportItems)
+                dirButton, openerSelect, EMBEDDED ? null : exportItems)
             : null
         ),
         // Only a broken trace is loud enough to sit in the header; the passing
