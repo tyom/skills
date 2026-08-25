@@ -8,9 +8,21 @@ against source-root.
 # tool would only duplicate the escaping and file handling below.
 import collections, functools, html, json, os, pathlib, sys
 
+# --template swaps the bundled page for src/template.html, so `just play` serves
+# a page this build filled while bun still owns its scripts. Taken out of argv
+# here, so everything below keeps reading fixed positions.
+template = None
+if "--template" in sys.argv:
+    i = sys.argv.index("--template")
+    if i + 1 == len(sys.argv):
+        sys.exit("build.py: --template needs a path")
+    template = pathlib.Path(sys.argv[i + 1])
+    del sys.argv[i:i + 2]
+
 if len(sys.argv) != 4:
     # 2, not 1: a broken graph also exits non-zero, and the two are worth telling apart.
-    print("usage: build.py <flow.json> <out.html> <source-root>", file=sys.stderr)
+    print("usage: build.py [--template <page.html>] <flow.json> <out.html> <source-root>",
+          file=sys.stderr)
     sys.exit(2)
 
 d = pathlib.Path(__file__).resolve().parent
@@ -434,7 +446,7 @@ for flow, m, (warnings, _) in zip(flows, measures, reports):
 for flow, (_, bad) in zip(flows, reports):
     flow["problems"] = [f"{what}: {where}" for what, where in bad]
 
-page = (d / "template.html").read_text()
+page = (template or d / "template.html").read_text()
 for marker, part in (
     # The title is written into the head, not set by the script, so the file
     # names itself in a listing or a bookmark that never runs it.
