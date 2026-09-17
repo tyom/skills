@@ -2,7 +2,6 @@ import * as React from 'react';
 import * as ReactDOM from 'react-dom/client';
 import * as ReactFlow from '@xyflow/react';
 import * as dagre from '@dagrejs/dagre';
-import '@xyflow/react/dist/style.css';
 import './style.css';
 
 (function () {
