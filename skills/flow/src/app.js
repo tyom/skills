@@ -235,7 +235,104 @@ import './style.css';
     };
   }
 
-  function exportFlow(nodes, title, format, withBackground) {
+  // tldraw has a fixed palette and a fixed set of geo shapes, so each kind
+  // travels as its nearest member rather than as its own colour. A kind with no
+  // entry is an ordinary box in grey, which is what an unknown step looks like
+  // on the page too.
+  var TLDR_COLOR = {
+    start: 'green', step: 'grey', decision: 'orange', io: 'blue',
+    store: 'violet', end: 'red', success: 'green', fork: 'light-green',
+    join: 'light-green', state: 'light-violet'
+  };
+  // The page draws every step as a card and only a decision as a hexagon, so the
+  // export does the same. Ovals and parallelograms would be the textbook
+  // flowchart, but they would not be this diagram.
+  var TLDR_GEO = { decision: 'hexagon' };
+  var TLDR_EDGE_COLOR = { error: 'red', retry: 'orange' };
+
+  // tldraw's smallest label is still half again the size of the page's, so a box
+  // measured here would have its text hanging out of it there. The font size is
+  // fixed by the size prop, so the room has to come from the geometry: scaling
+  // positions and boxes together keeps the layout and widens every box against
+  // the text. Raise it if a label ever spills; the arrows follow either way.
+  var TLDR_SCALE = 1.5;
+
+  // Schema 1 on purpose. tldraw migrates an older file forward when it opens
+  // one, but refuses versions from after its own, so the oldest schema that can
+  // carry these shapes is the one that keeps working as tldraw moves. The
+  // numbers are read off a file tldraw wrote, not invented.
+  var TLDR_SCHEMA = {"schemaVersion":1,"storeVersion":4,"recordVersions":{"asset":{"version":1,"subTypeKey":"type","subTypeVersions":{"image":2,"video":2,"bookmark":0}},"camera":{"version":1},"document":{"version":2},"instance":{"version":22},"instance_page_state":{"version":5},"page":{"version":1},"shape":{"version":3,"subTypeKey":"type","subTypeVersions":{"group":0,"text":1,"bookmark":1,"draw":1,"geo":7,"note":4,"line":1,"frame":0,"arrow":2,"highlight":0,"embed":4,"image":2,"video":1}},"instance_presence":{"version":5},"pointer":{"version":1}}};
+
+  // Bound at the centre: tldraw then picks where on the border to meet, so the
+  // arrow stays joined and re-routes itself when the box is dragged.
+  function tldrawEnd(shapeId) {
+    return {
+      type: 'binding', boundShapeId: shapeId,
+      normalizedAnchor: { x: 0.5, y: 0.5 }, isPrecise: false, isExact: false
+    };
+  }
+
+  // The only export that never touches the canvas: the layout already holds
+  // every position and size, so this is the graph rewritten, not a picture of it.
+  function tldrawExport(nodes, edges, title) {
+    // Ordering keys, base-36 and padded so they still sort by insertion past
+    // the tenth shape — 'a10' sorts before 'a2'.
+    var seq = 0;
+    function index() { return 'a' + (++seq).toString(36).padStart(4, '0'); }
+    var shapeOf = Object.create(null);
+    var records = [
+      { id: 'document:document', typeName: 'document', gridSize: 10, name: title, meta: {} },
+      { id: 'page:page', typeName: 'page', name: title || 'Flow', index: index(), meta: {} }
+    ];
+
+    nodes.forEach(function (n, i) {
+      var kind = n.data.kind, id = 'shape:n' + i;
+      shapeOf[n.id] = id;
+      records.push({
+        id: id, typeName: 'shape', type: 'geo', parentId: 'page:page',
+        index: index(), x: n.position.x * TLDR_SCALE, y: n.position.y * TLDR_SCALE,
+        rotation: 0, isLocked: false, opacity: 1, meta: {},
+        props: {
+          w: n.width * TLDR_SCALE, h: n.height * TLDR_SCALE,
+          geo: TLDR_GEO[kind] || 'rectangle', color: TLDR_COLOR[kind] || 'grey',
+          // Solid, not tldraw's default sketched stroke, and tinted rather than
+          // hollow: the page's cards carry their kind as a colour, not a texture.
+          labelColor: 'black', fill: 'semi', dash: 'solid', size: 's', font: 'sans',
+          // The ref goes under the label, the way the node reads on the page.
+          text: n.data.ref ? n.data.label + '\n' + n.data.ref : n.data.label,
+          // Centred, not left like the card: a hexagon's text box is the full
+          // width, so left-aligning crams the label into the narrow point.
+          align: 'middle', verticalAlign: 'middle', growY: 0, url: ''
+        }
+      });
+    });
+
+    edges.forEach(function (e, i) {
+      if (!shapeOf[e.from] || !shapeOf[e.to]) return;
+      records.push({
+        id: 'shape:e' + i, typeName: 'shape', type: 'arrow', parentId: 'page:page',
+        index: index(), x: 0, y: 0, rotation: 0, isLocked: false, opacity: 1, meta: {},
+        props: {
+          dash: e.kind === 'retry' ? 'dashed' : 'solid', size: 'm', fill: 'none',
+          color: TLDR_EDGE_COLOR[e.kind] || 'grey', labelColor: 'black',
+          bend: 0, arrowheadStart: 'none', arrowheadEnd: 'arrow',
+          text: e.label || '', font: 'sans',
+          start: tldrawEnd(shapeOf[e.from]), end: tldrawEnd(shapeOf[e.to])
+        }
+      });
+    });
+
+    return new Blob([JSON.stringify({
+      tldrawFileFormatVersion: 1, schema: TLDR_SCHEMA, records: records
+    })], { type: 'application/json' });
+  }
+
+  function exportFlow(nodes, edges, title, format, withBackground) {
+    // No canvas needed, so it comes before the DOM read below.
+    if (format === 'tldr') {
+      download(tldrawExport(nodes, edges, title), fileName(title, 'tldr'));
+      return Promise.resolve();
+    }
     var image = svgExport(nodes, title, withBackground);
     if (format === 'svg') {
       download(image.blob, fileName(title, 'svg'));
@@ -1535,7 +1632,7 @@ import './style.css';
       // svgExport throws synchronously when the canvas is missing, so the call
       // goes through a promise to keep both failures on one handler.
       Promise.resolve().then(function () {
-        return exportFlow(nodes, f.title || doc.title || 'Flow', format, exportBg);
+        return exportFlow(nodes, f.edgeItems, f.title || doc.title || 'Flow', format, exportBg);
       }).catch(function (error) {
         console.error(error); alert('Could not export this flow.');
       });
@@ -1716,6 +1813,8 @@ import './style.css';
         onClick: function () { runExport('svg'); }
       }, 'Export as SVG'),
       h('button', { key: 'png', onClick: function () { runExport('png'); } }, 'Export as PNG'),
+      h('button', { key: 'tldr', onClick: function () { runExport('tldr'); } },
+        'Export as tldraw'),
       h('label', { key: 'bg' },
         h('input', {
           type: 'checkbox', checked: exportBg,

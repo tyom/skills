@@ -35,8 +35,12 @@ the page carries VS Code, Cursor, Windsurf, Zed, Sublime, TextMate, WebStorm and
 IntelliJ, and the reader picks from the header.
 
 Several related flows become tabs in one file. Arrow keys walk the graph, `L`
-turns the layout, `M` shows the minimap, and the page exports to SVG or PNG. No
-server, no network, one file you can email.
+turns the layout, `M` shows the minimap, and the page exports to SVG, PNG or a
+tldraw file. No server, no network, one file you can email.
+
+The tldraw export is the only one that is not a picture: it writes the graph
+back out as boxes and bound arrows, so the diagram opens in tldraw as something
+you can rearrange and annotate rather than trace over.
 
 Inside a chat client's own preview the page is an iframe, and a sandboxed iframe
 is not allowed to save a file: the export runs and the download is dropped with
