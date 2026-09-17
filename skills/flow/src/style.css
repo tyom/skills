@@ -1,3 +1,8 @@
+/* Imported here, not from app.js: the bundler is free to order two JS-imported
+   sheets either way, and dev put ours first, so xyflow's defaults won every
+   tie. An @import is ordered by the cascade, so our overrides always follow. */
+@import '@xyflow/react/dist/style.css';
+
   :root, .canvas-light {
     --bg: #f6f7f9; --panel: #fff; --ink: #14171a; --muted: #6b7280;
     --line: #e3e6ea; --accent: #2563eb;
