@@ -16,7 +16,7 @@ npx skills add tyom/skills
 
 ## Skills
 
-- `explainer` — Builds a self-contained, interactive HTML explainer for any subject (repo, spec, API, or concept), grounded in its real source so a reader can retell it. Slash-only (`/explainer`).
+- `explainer` — Builds a self-contained, interactive HTML explainer for any subject (repo, spec, API, or concept), grounded in its real source so a reader can retell it. Profiles the reader (from the conversation and local git history, or `--reader`) to pick analogies; `--brief` gives a one-screen overview, and a proxy-reader subagent checks the page teaches. Slash-only (`/explainer`).
 - `explain-diff` — Explains a code change (local diff, branch, commit range, or GitHub PR) as a self-contained HTML page: background, intuition, code walkthrough, and a comprehension quiz. Inspired by [explain-diff-html](https://gist.github.com/geoffreylitt/a29df1b5f9865506e8952488eac3d524).
 - [**flow**](skills/flow/README.md) — Traces a flow through its real source — a request lifecycle, pipeline, state machine, or user journey — and renders it as an interactive graph with a detail panel per step, one or more flows as tabs. Slash-only (`/flow`).
 - `humanizer` — Rewrites prose so it reads like a person wrote it: finds the AI tells, works on what each one covers, and keeps the writer's own register. Model-invoked, so it also fires when prose is the deliverable.
