@@ -51,7 +51,7 @@ For the operator, read only two sources:
 
 When this evidence is thin, use the general profile. Before building, tell the operator in one chat line what the profile came from ("Profile from: conversation + git log in <repo>"). Keep that line off the page.
 
-Write the profile as 3 to 5 lines: domains and tools the reader knows well, and gaps likely to matter for this subject. The step is done when every "knows" line names something concrete enough to draw an analogy from, and every gap line names a part of this subject.
+Write the profile as 3 to 5 lines: domains and tools the reader knows well, and gaps likely to matter for this subject. "Knows" lines name domains from outside the subject; the subject's own libraries and services belong in the hero's stack line, since an analogy drawn from a part of the subject teaches nothing about it. The step is done when every "knows" line names something concrete enough to draw an analogy from, and every gap line names a part of this subject.
 
 ### 2. Outline the teaching path
 
@@ -122,7 +122,8 @@ Every explainer opens with the same recognisable pattern: it sets the subject an
 2. **The name**, as a restrained display title (see Style).
 3. **A one-to-two-sentence plain-language identity** — what it is and who it's for, in prose, with a key identifier or two highlighted inline (mono/accent). No marketing.
 4. **A meta line** (small, muted, mono) for the provenance facts: entry point or package name, version, source URL or paths, commit and date.
-5. **An assumptions line**: "Written for someone who knows: ...", listing the profile's domains, so a reader whose background differs sees why an analogy missed. Domains and tools only, never the evidence behind them.
+5. **A stack line** (small, muted, mono), when the subject is software built on other parts: the major pieces grouped by layer, e.g. `FE React + TS · state Zustand · storage Dexie/IndexedDB · AI Vercel AI SDK`. Take it from the manifest and imports. Layers only, not the full dependency list; that goes in Dependencies & footprint.
+6. **An assumptions line**: "Written for someone who knows: ...", listing the profile's "knows" domains at the layer level ("frontend React and TypeScript, browser storage, LLM APIs"), so a reader whose background differs sees why an analogy missed. Domains only, never the evidence behind them.
 
 Every value in the hero must be a real, verified fact from the source, never a guess or a placeholder.
 
