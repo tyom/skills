@@ -25,7 +25,7 @@ npx skills add tyom/skills
 
 ## Local development
 
-Symlink this repo's skills into `~/.claude/skills` to test them before publishing.
+Symlink this repo's skills into `~/.claude/skills` (Claude Code) and `~/.agents/skills` (Codex and other agents; where `npx skills add` installs) to test them before publishing.
 Edits to a `SKILL.md` are then live — just start a fresh session.
 
 ```bash

@@ -1,4 +1,4 @@
-# Symlink this repo's skills into ~/.claude/skills for local testing.
+# Symlink this repo's skills into each agent's skills dir (~/.claude, ~/.agents) for local testing.
 # The logic lives in ./link-skills.sh; these are just friendly entry points.
 
 # List available recipes.
@@ -9,11 +9,11 @@ default:
 status:
     @./link-skills.sh status
 
-# Symlink skills into ~/.claude/skills (all absent, or named ones).
+# Symlink skills into each agent's skills dir (all absent, or named ones).
 link *names:
     @./link-skills.sh link {{names}}
 
-# Remove this repo's symlinks from ~/.claude/skills (all, or named ones).
+# Remove this repo's symlinks from each agent's skills dir (all, or named ones).
 unlink *names:
     @./link-skills.sh unlink {{names}}
 
