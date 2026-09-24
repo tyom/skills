@@ -165,7 +165,7 @@ If neither is available, leave the file for the user to open and say so, rather 
 
 #### Proxy reader check
 
-The browser pass proves the page renders. The **proxy reader** tests whether it teaches, from what a person sees. First save the page's **visible text**: run headless Chrome with `--dump-dom` on the page, drop `<script>` and `<style>` elements and all tags, and write the text next to the page. Use headless Chrome even when a browser MCP is connected, since MCP file writes may be limited to workspace roots. Without Chrome, strip the HTML file the same way. The dump holds each demo's initial state only, so a fact the questions need must also be in prose or a visible label.
+The browser pass proves the page renders. The **proxy reader** tests whether it teaches, from what a person sees. First save the page's **visible text**, meaning what a person sees on load, with hidden and collapsed content left out. With headless Chrome, run a test copy of the page with a script appended that writes `document.body.innerText` into a `<pre>`, read it from `--dump-dom`, and save it next to the page. `innerText` skips hidden elements and closed `<details>` bodies, which tag stripping keeps. Use headless Chrome even when a browser MCP is connected, since MCP file writes may be limited to workspace roots. Without Chrome, strip the HTML file's tags after dropping `<script>`, `<style>`, `<template>`, elements marked `hidden` or `aria-hidden="true"`, and closed `<details>` apart from their `<summary>`. The dump holds each demo's initial state only, so a fact the questions need must also be in prose or a visible label.
 
 Dispatch a fresh subagent with:
 
@@ -177,7 +177,7 @@ Ask it to answer each question in one or two sentences, and to name the page sec
 
 Trace every miss to a cause and fix that cause on the page: a missing layer, an unclear term, or an analogy that led the reader astray (tighten the Unlike line or drop the analogy). Regenerate the visible text after each fix. Re-run with a fresh subagent, up to two revision rounds. The check passes when at least 6 of 8 answers are right (or the same share of fewer questions) and no miss traces to an analogy. Report the final score and any remaining misses to the user.
 
-The artifact fails if the proxy reader cannot answer the proxy questions, if a demo is broken, or if any text overlaps, clips, or overflows.
+The artifact fails if the proxy reader check does not pass, if a demo is broken, or if any text overlaps, clips, or overflows.
 
 ## Style
 
