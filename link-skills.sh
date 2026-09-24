@@ -3,8 +3,10 @@
 # ponytail: symlinks, so edits to SKILL.md are live — no build, no reinstall.
 set -euo pipefail
 
-# Every agent reads its own dir; Codex won't see ~/.claude/skills.
-SKILL_DIRS=("${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}" "${CODEX_SKILLS_DIR:-$HOME/.codex/skills}")
+# Claude Code reads only ~/.claude/skills. Codex and other agents read the shared
+# ~/.agents/skills, where `npx skills add` installs, so a stale copy there shows as
+# a conflict. ~/.codex/skills is left out: Codex lists same-named skills twice.
+SKILL_DIRS=("${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}" "${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}")
 GLOBAL="${SKILL_DIRS[0]}"
 REPO_SKILLS="$(cd "$(dirname "${BASH_SOURCE[0]}")/skills" && pwd -P)"
 
