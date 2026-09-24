@@ -140,7 +140,7 @@ This is what separates a beautiful read from a thing the reader actually _gets_.
 - **Data model** → toggle between fields, walk a record through its lifecycle states, or filter a schema.
 - **Config / flags** → flip options and render the resulting effective behaviour.
 
-Keep demos honest: port the real rules, use realistic sample data drawn from the source, and don't fake outputs. When the real inputs are live observations the source can't supply (page timings, network responses), make up illustrative inputs and label them as illustrative on the page. Provide a few curated scenarios rather than a blank canvas — guided beats open-ended for teaching. Every interactive control needs a visible, discoverable affordance (a labelled button, a select, a hover hint).
+Keep demos honest: port the real rules, use realistic sample data drawn from the source, and don't fake outputs. Keep the port in its own `.js` file while building, and test it in Node against real outputs of the subject (its binary, test fixtures, or documented examples) before inlining it into the page. When the real inputs are live observations the source can't supply (page timings, network responses), make up illustrative inputs and label them as illustrative on the page. Provide a few curated scenarios rather than a blank canvas — guided beats open-ended for teaching. Every interactive control needs a visible, discoverable affordance (a labelled button, a select, a hover hint).
 
 Interactivity is a strong default, not a mandate for trivial subjects. A two-paragraph concept may need none. Anything with a transformation, a state machine, or composable parts almost always benefits.
 
@@ -153,10 +153,11 @@ End with a short note on what the artifact was generated from (which files/docs 
 Open the file in a real browser and check it before finishing — drive it directly, don't offload verification to another skill. **Decide the verification tool up front and confirm it's actually available before calling it** — don't trial-and-error through broken tool calls and error recovery. Use the first that's present:
 
 1. **Chrome DevTools MCP** (or any other connected browser-automation MCP) — preferred. Check it's connected before reaching for anything else.
-2. **System Chrome/Chromium, headless from the CLI** — confirm the binary first (`command -v`, or the known app path like `/Applications/Google Chrome.app/...`), then drive it with `--screenshot` / `--dump-dom`. Do **not** hand-wire Playwright or resolve npm module paths by hand; that `ERR_MODULE_NOT_FOUND` / CJS-vs-ESM rabbit hole burns tokens for nothing.
+2. **System Chrome/Chromium, headless from the CLI** — confirm the binary first (`command -v`, or the known app path like `/Applications/Google Chrome.app/...`), then drive it with `--screenshot` / `--dump-dom`. Do **not** hand-wire Playwright or resolve npm module paths by hand; that `ERR_MODULE_NOT_FOUND` / CJS-vs-ESM rabbit hole burns tokens for nothing. To click controls, run a test copy of the page with a script appended that drives every control and writes its results into a `<pre>`, then read them from `--dump-dom`. Headless Chrome lays out no narrower than 500px, so for mobile load the page in a 390px-wide `<iframe>` inside a wrapper page.
 
 If neither is available, leave the file for the user to open and say so, rather than thrashing.
 
+- Read the console first. Any uncaught error fails the check, and so does a demo that renders empty on load.
 - Check desktop and a narrow mobile viewport.
 - Click every interactive control and confirm it behaves and updates correctly.
 - For a step-through demo: run the verify checklist in [`step-throughs.md`](step-throughs.md) (both-direction parity, diff highlight, keyboard, safe endpoints).
