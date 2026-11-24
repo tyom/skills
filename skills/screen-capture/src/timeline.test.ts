@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { align, chain, contentBox, layout, resample, retime, timeline } from './timeline.ts';
+import { align, chain, contentBox, layout, resample, retime, stills, timeline } from './timeline.ts';
 
 test('turns wall-clock events into clip seconds', () => {
   const clip = {
@@ -147,4 +147,15 @@ test('finds the box around everything that differs from the background, across f
   const data = Uint8Array.from([...frame({ '1,1': [20, 20, 20], '0,0': [247, 250, 252] }), ...frame({ '4,2': [30, 90, 240] })]);
   assert.deepEqual(contentBox(data, 6, 4), { x: 1, y: 1, width: 4, height: 2 });
   assert.equal(contentBox(Uint8Array.from(frame({})), 6, 4), null);
+});
+
+test('takes each still in the next beat\'s reading pause, before its first tap', () => {
+  // begin() 2s in, an 8s clip: beat A runs 0 to 3, beat B 3 to the end.
+  // A's outcome can paint just as B's caption starts, so A's still is 0.3s into B: 2 + 3.3.
+  // The last beat has no next one: two 60fps frames before the end, 2 + 8 - 0.033.
+  const quiet = { offset: 2, duration: 8, captions: [{ start: 0 }, { start: 3 }], pointer: [] };
+  assert.deepEqual(stills(quiet), [5.3, 9.967]);
+  // B taps at 3.1, sooner than 0.3s in: A's still is two frames before that tap, 2 + 3.1 - 0.033.
+  const busy = { ...quiet, pointer: [{ t: 1, kind: 'tap' as const }, { t: 3.1, kind: 'tap' as const }] };
+  assert.deepEqual(stills(busy), [5.067, 9.967]);
 });

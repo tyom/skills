@@ -147,6 +147,27 @@ interface Point {
   y: number;
 }
 
+/**
+ * The time in the recorded video (`clip.mp4` seconds) to take each caption's still, showing its beat's
+ * outcome. That outcome can paint just as the next caption starts, so look into the next beat's reading
+ * pause: 0.3s in, or two frames before its first tap if sooner. The last beat ends two frames early: the
+ * video holds whole frames, up to one fewer than the clip's end, and a seek past its last frame finds none.
+ */
+export function stills({ offset, duration, captions, pointer }: {
+  offset: number;
+  duration: number;
+  captions: { start: number }[];
+  pointer: { t: number }[];
+}) {
+  const frames = 2 / 60;
+  return captions.map((_, i) => {
+    const next = captions[i + 1]?.start;
+    const tap = next === undefined ? undefined : pointer.find((e) => e.t > next)?.t;
+    const t = next === undefined ? duration - frames : Math.min(next + 0.3, (tap ?? Infinity) - frames, duration - frames);
+    return Math.round((offset + t) * 1000) / 1000;
+  });
+}
+
 /** The part of a clip from `from` to `to` (clip seconds) plays from `at` (output seconds). */
 export interface Segment {
   from: number;

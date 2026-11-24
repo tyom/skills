@@ -1,11 +1,14 @@
-// Composes a recorded clip with its captions and pointer into a 60fps MP4 via HyperFrames.
+// Composes a recorded clip with its captions and pointer into a 60fps MP4 via HyperFrames,
+// or with --stills into one PNG per caption and a sheet of them all.
 // Two clips of the same flow (before and after a change) play in two panes under shared captions.
 // Usage: node compose.ts <video dir> [<after video dir>] [options], see --help.
 import { parseArgs } from 'node:util';
-import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { align, chain, contentBox, cursor, layout, retime, timeline, type Panel, type Segment, type Size } from './timeline.ts';
+import { pathToFileURL } from 'node:url';
+import { chromium } from 'playwright';
+import { align, chain, contentBox, cursor, layout, retime, stills, timeline, type Panel, type Segment, type Size } from './timeline.ts';
 import type { RecordedClip } from './clip.ts';
 
 const help = `node compose.ts <video dir> [<after video dir>] [options]
@@ -17,7 +20,8 @@ const help = `node compose.ts <video dir> [<after video dir>] [options]
               (default: the area any frame shows content in, from the page background)
   --labels    before,after pane labels, such as Bug,Fixed  (default: Before,After)
   --theme     dark | light                          (default: dark)
-  --out       output MP4                            (default: <first video dir>/final.mp4)
+  --stills    one PNG per caption, at the last frame of its beat, plus sheet.png with every beat
+  --out       output MP4, or with --stills a folder  (default: <first video dir>/final.mp4 or /stills)
   --no-render write the HyperFrames project only`;
 
 const { values, positionals } = parseArgs({
@@ -30,6 +34,7 @@ const { values, positionals } = parseArgs({
     labels: { type: 'string', default: 'Before,After' },
     theme: { type: 'string', default: 'dark' },
     out: { type: 'string' },
+    stills: { type: 'boolean', default: false },
     'no-render': { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
@@ -63,6 +68,8 @@ if (compare) {
   const k = a.captions.findIndex((c, i) => c.text !== b.captions[i].text);
   if (k >= 0) fail(`caption ${k + 1} differs: "${a.captions[k].text}" before, "${b.captions[k].text}" after`);
 }
+
+if (values.stills && !clips[0].captions.length) fail('--stills takes one still per caption, and the clip has none');
 
 const labels = values.labels!.split(',').map((l) => l.trim());
 if (labels.length !== 2 || labels.some((l) => !l)) fail('--labels is two names, before then after, such as Bug,Fixed');
@@ -227,14 +234,15 @@ function pointerParts(i: number, pointer: (typeof panes)[number]['pointer']) {
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
 
 const pointers = panes.map((p, i) => pointerParts(i, p.pointer));
-const panesHtml = panes
+/** The panes, each holding the page element `screen(i)` makes: the video, or a still. */
+const panesHtml = (screen: (i: number) => string) => panes
   .map(
     (p, i) => `${p.label ? `
     <div class="label" style="left: ${slots[i].x}px; top: ${slots[i].y - label}px">${escape(p.label)}</div>` : ''}
     <div class="slot" style="left: ${slots[i].x}px; top: ${slots[i].y}px; width: ${slots[i].width}px; height: ${slots[i].height}px">
       <div class="stage">
         <div class="page">
-          <video id="screen-${i}" class="clip screen" src="${p.src}" muted playsinline data-start="0" data-duration="${duration}" data-playback-start="${compare ? 0 : p.offset}"></video>${pointers[i].html}
+          ${screen(i)}
         </div>
       </div>
     </div>`,
@@ -263,14 +271,9 @@ const panelHtml = box
     </div>`
   : '';
 const colours = theme === 'dark' ? { bg: '#0e0f12', fg: '#f4f4f5', accent: '#5b9dff' } : { bg: '#f2f2ef', fg: '#141414', accent: '#2563eb' };
-
-const html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=${canvas.width}, height=${canvas.height}" />
-  <style>
-    :root { --bg: ${colours.bg}; --fg: ${colours.fg}; --accent: ${colours.accent}; }
+const font = '-apple-system, "Segoe UI", Inter, Roboto, sans-serif';
+// Shared by the video and the stills, so a still frames the page exactly as the video does.
+const baseCss = `    :root { --bg: ${colours.bg}; --fg: ${colours.fg}; --accent: ${colours.accent}; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: ${canvas.width}px; height: ${canvas.height}px; overflow: hidden; background: var(--bg); }
     .clip { position: absolute; }
@@ -278,16 +281,27 @@ const html = `<!doctype html>
     .stage { position: absolute; left: 0; top: 0; width: ${crop.width}px; height: ${crop.height}px; transform: scale(${scale}); transform-origin: 0 0; }
     .page { position: absolute; left: ${-crop.x}px; top: ${-crop.y}px; width: ${viewport.width}px; height: ${viewport.height}px; }
     .screen { left: 0; top: 0; width: 100%; height: 100%; }
-    .label { position: absolute; height: ${label}px; padding-left: ${Math.round(radius / 2)}px; color: var(--fg); opacity: .75; font: 600 ${Math.round(fontSize * 0.7)}px/${label * 0.8}px -apple-system, "Segoe UI", Inter, Roboto, sans-serif; letter-spacing: .02em; }
+    .label { position: absolute; height: ${label}px; padding-left: ${Math.round(radius / 2)}px; color: var(--fg); opacity: .75; font: 600 ${Math.round(fontSize * 0.7)}px/${label * 0.8}px ${font}; letter-spacing: .02em; }
     #panel { position: absolute; }
+    #panel p { color: var(--fg); font: 600 ${fontSize}px/1.25 ${font}; letter-spacing: -0.01em; text-align: ${panel === 'bottom' ? 'center' : 'left'}; }`;
+
+const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=${canvas.width}, height=${canvas.height}" />
+  <style>
+${baseCss}
     #chain { left: 0; right: 0; top: 0; bottom: ${panel === 'bottom' ? 0 : `calc(50% - ${fontSize}px)`}; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
     .line { display: grid; animation-duration: ${duration}s; animation-timing-function: linear; animation-fill-mode: both; }
-    .line p { min-height: 0; overflow: hidden; padding-top: ${Math.round(fontSize * 0.45)}px; color: var(--fg); font: 600 ${fontSize}px/1.25 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; letter-spacing: -0.01em; text-align: ${panel === 'bottom' ? 'center' : 'left'}; }${chainCss}
+    .line p { min-height: 0; overflow: hidden; padding-top: ${Math.round(fontSize * 0.45)}px; }${chainCss}
 ${pointerCss}${pointers.map((p) => p.css).join('')}
   </style>
 </head>
 <body>
-  <div id="root" data-composition-id="main" data-start="0" data-duration="${duration}" data-width="${canvas.width}" data-height="${canvas.height}" data-no-timeline>${panesHtml}${panelHtml}
+  <div id="root" data-composition-id="main" data-start="0" data-duration="${duration}" data-width="${canvas.width}" data-height="${canvas.height}" data-no-timeline>${panesHtml(
+    (i) => `<video id="screen-${i}" class="clip screen" src="${panes[i].src}" muted playsinline data-start="0" data-duration="${duration}" data-playback-start="${compare ? 0 : panes[i].offset}"></video>${pointers[i].html}`,
+  )}${panelHtml}
   </div>
 </body>
 </html>
@@ -305,6 +319,109 @@ function alignVideo(src: string, offset: number, segments: Segment[], out: strin
     // Only an input to the render, which encodes again: a fast near-lossless encode.
     '-t', String(duration), '-c:v', 'libx264', '-crf', '10', '-preset', 'veryfast', '-g', '60', out,
   ]);
+}
+
+if (values.stills) {
+  const dir = path.resolve(values.out ?? path.join(clips[0].dir, 'stills'));
+  const work = path.join(dir, '.work');
+  mkdirSync(work, { recursive: true });
+  // Each pane's still comes from its own clip on its own times (not the shared timeline), as the full frame at native pixels.
+  const times = clips.map((c) => stills(c));
+  const frames = panes.map((p, i) =>
+    times[i].map((t, k) => {
+      const file = path.join(work, `${i}-${k}.png`);
+      execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', String(t), '-i', path.join(p.dir, 'clip.mp4'), '-frames:v', '1', file]);
+      if (!existsSync(file)) fail(`no frame at ${t}s in ${p.dir}/clip.mp4`);
+      return path.basename(file);
+    }),
+  );
+  const pages = captions.map((c, k) => ({
+    file: `${String(k + 1).padStart(2, '0')}.png`,
+    size: canvas,
+    html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+${baseCss}
+    .screen { display: block; }
+    #panel { display: flex; align-items: ${panel === 'bottom' ? 'flex-start' : 'center'}; justify-content: ${panel === 'bottom' ? 'center' : 'flex-start'}; }
+  </style>
+</head>
+<body>${panesHtml((i) => `<img class="clip screen" src="${frames[i][k]}" alt="" />`)}${box ? `
+  <div id="panel" style="left: ${box.x}px; top: ${box.y}px; width: ${box.width}px; height: ${box.height}px"><p>${escape(c.text)}</p></div>` : ''}
+</body>
+</html>
+`,
+  }));
+
+  // The sheet: every beat in reading order, wrapped into rows, each shot cropped as in the video.
+  const shot = crop.height > crop.width ? 320 : 560;
+  const k = shot / crop.width;
+  const gap = 32;
+  const beat = stack ? shot : panes.length * shot + (panes.length - 1) * 16;
+  const cols = Math.max(1, Math.min(captions.length, Math.floor(1800 / (beat + gap))));
+  const sheetWidth = cols * beat + (cols - 1) * gap + 2 * 48;
+  pages.push({
+    file: 'sheet.png',
+    size: { width: sheetWidth, height: 1 },
+    html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: ${sheetWidth}px; padding: 48px; background: ${colours.bg}; color: ${colours.fg}; font-family: ${font}; }
+    .grid { display: grid; grid-template-columns: repeat(${cols}, ${beat}px); gap: ${gap * 1.5}px ${gap}px; align-items: start; }
+    .panes { display: flex; flex-direction: ${stack ? 'column' : 'row'}; gap: 16px; }
+    .label { font: 600 14px/1 ${font}; opacity: .75; letter-spacing: .02em; margin-bottom: 8px; }
+    .shot { position: relative; overflow: hidden; width: ${shot}px; height: ${Math.round(crop.height * k)}px; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
+    .shot img { position: absolute; left: ${-crop.x * k}px; top: ${-crop.y * k}px; width: ${viewport.width * k}px; height: ${viewport.height * k}px; }
+    p { margin-top: 16px; font: 600 20px/1.3 ${font}; letter-spacing: -0.01em; }
+    p span { opacity: .5; margin-right: .4em; }
+  </style>
+</head>
+<body>
+  <div class="grid">${captions
+    .map(
+      (c, b) => `
+    <div>
+      <div class="panes">${panes
+        .map(
+          (p, i) => `
+        <div>${p.label ? `<div class="label">${escape(p.label)}</div>` : ''}<div class="shot"><img src="${frames[i][b]}" alt="" /></div></div>`,
+        )
+        .join('')}
+      </div>
+      <p><span>${b + 1}</span>${escape(c.text)}</p>
+    </div>`,
+    )
+    .join('')}
+  </div>
+</body>
+</html>
+`,
+  });
+
+  const browser = await chromium.launch();
+  try {
+    for (const page of pages) {
+      // The stills render at the output size; the sheet at 2x, so its small shots stay sharp.
+      const sheet = page.file === 'sheet.png';
+      const tab = await browser.newPage({ viewport: page.size, deviceScaleFactor: sheet ? 2 : 1 });
+      const html = path.join(work, page.file.replace('.png', '.html'));
+      writeFileSync(html, page.html);
+      await tab.goto(pathToFileURL(html).href);
+      await tab.screenshot({ path: path.join(dir, page.file), fullPage: sheet });
+      await tab.close();
+    }
+  } finally {
+    await browser.close();
+  }
+  rmSync(work, { recursive: true, force: true });
+  console.log(`compose: stills at ${times.map((t) => t.join(', ')).join(' and ')} s of the clip`);
+  console.log(`compose: ${canvas.width}x${canvas.height}, crop ${crop.x},${crop.y},${crop.width},${crop.height}, panel ${panel}: wrote ${captions.length} stills and sheet.png -> ${dir}`);
+  process.exit(0);
 }
 
 const out = path.resolve(values.out ?? path.join(clips[0].dir, 'final.mp4'));

@@ -1,6 +1,6 @@
 ---
 name: screen-capture
-description: "Records a scripted web or iOS Simulator flow at 60fps, and renders it as a portrait, landscape or square MP4 with captions and a drawn cursor or taps."
+description: "Records a scripted web or iOS Simulator flow at 60fps, and renders it as a portrait, landscape or square MP4 with captions and a drawn cursor or taps, or as a set of captioned screenshots."
 argument-hint: "<the flow to show, the app URL, and the sizes>"
 disable-model-invocation: true
 # Auto-approved while the skill runs: setup, the compose script and frame checks.
@@ -27,7 +27,7 @@ Run `node <skill>/src/setup.js` before every recording session, with `--ios` for
 
 ## 2. Scope the flow
 
-From `$ARGUMENTS` or the conversation, pin down: the app URL and the command that starts it (or a live site), the goals to show (in the words the app uses), a caption for each beat, the output sizes, and the framing: cropped to the page's content (the default) or the full page (`--crop none` in §5, when the user asks for the full screen or whole page). To show a change, such as a bug fix, also pin down the two versions: by default, before is the base the change branches from and after is the working tree. Ask only for what you cannot infer. Done when every beat is one goal with one visible outcome.
+From `$ARGUMENTS` or the conversation, pin down: the app URL and the command that starts it (or a live site), the goals to show (in the words the app uses), a caption for each beat, the output (a video, a set of screenshots, or both), the output sizes, and the framing: cropped to the page's content (the default) or the full page (`--crop none` in §5, when the user asks for the full screen or whole page). To show a change, such as a bug fix, also pin down the two versions: by default, before is the base the change branches from and after is the working tree. Ask only for what you cannot infer. Done when every beat is one goal with one visible outcome.
 
 ## 3. Write the flow
 
@@ -144,7 +144,9 @@ node <skill>/src/compose.ts <video dir> --size portrait --out .screen-capture/ou
 
 For a before and after, pass both folders, before first: `node <skill>/src/compose.ts <before dir> <after dir> --out ...`. Each caption then starts on the same frame in both panes, and between captions the faster side holds its last frame. Tall pages sit side by side and wide pages stack, each under its label: `--labels Bug,Fixed` renames them (default `Before,After`). Compose stops when the two clips' captions or page sizes differ.
 
-`--help` lists the options: `--size`, `--panel none|side|bottom`, `--pointer cursor|tap|none`, `--crop x,y,w,h` in page CSS pixels or `none`, `--theme`, `--no-render`. The defaults follow the page: a crop to the area any frame shows content in (padded, the same for both panes; a page with a busy background keeps its full size), landscape with a side panel for wide pages, portrait with a bottom panel for tall ones, a cursor from 1024 px wide, taps below that. A render takes about 2 to 3 times the clip's length.
+`--help` lists the options: `--size`, `--panel none|side|bottom`, `--pointer cursor|tap|none`, `--crop x,y,w,h` in page CSS pixels or `none`, `--theme`, `--stills`, `--no-render`. The defaults follow the page: a crop to the area any frame shows content in (padded, the same for both panes; a page with a busy background keeps its full size), landscape with a side panel for wide pages, portrait with a bottom panel for tall ones, a cursor from 1024 px wide, taps below that. A render takes about 2 to 3 times the clip's length.
+
+For screenshots instead of a video, add `--stills` and give `--out` a folder: it writes one PNG per caption (`01.png`, `02.png`, ...), laid out like the video with that caption in the panel, and `sheet.png`, every beat in a grid with its caption. Each still shows its beat's outcome, taken from the start of the next beat's reading pause, before its first tap. Stills draw no pointer, and need no HyperFrames render, so they take seconds. For both outputs, run compose twice on the same folders.
 
 The HyperFrames project lands next to the MP4 (`<name>.hyperframes/`). To change the look, edit its `index.html`, then run `<skill>/node_modules/.bin/hyperframes render <project> --fps 60 --quality high --chroma-subsampling 444 --video-frame-format png -o <out>`.
 
@@ -152,9 +154,10 @@ The HyperFrames project lands next to the MP4 (`<name>.hyperframes/`). To change
 
 Done when, for every output:
 
+- For stills: you have viewed every PNG and the sheet, and each shows its beat's outcome under the right caption. The next two checks, frame rate and frame times, are for the video only.
 - `ffprobe` reports `r_frame_rate=60/1` at the requested size. This only checks the container: the recorder always writes 60fps, repeating frames when the capture falls behind. Judder in the viewed frames is the real sign of a slow capture.
 - You have viewed a frame at each caption and tap time compose printed, and each one shows the right caption, with the pointer on its target (in both panes for a before and after).
 - Compose printed no upscaling warning, or you told the user about it.
 - The crop cuts off nothing that matters, such as a toast near the edge. If it does, compose again with `--crop none` or a wider `--crop`, and tell the user.
 
-Report the MP4 paths and anything the check turned up.
+Report the output paths and anything the check turned up.
