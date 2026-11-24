@@ -1,0 +1,8 @@
+interface:
+  display_name: "Screen capture"
+  short_description: "Record a web or iOS Simulator flow as a 60fps showcase video"
+policy:
+  # Codex's half of the SKILL.md `disable-model-invocation: true`. Keep both in
+  # sync: without this, Codex still fires the skill implicitly. `$screen-capture`
+  # keeps working either way.
+  allow_implicit_invocation: false

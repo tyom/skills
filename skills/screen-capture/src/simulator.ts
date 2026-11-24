@@ -1,0 +1,100 @@
+// An e2e DeviceProvider for a local iOS Simulator whose `record` writes the same
+// clip.mp4 and clip.json as the web recorder: native pixels, constant 60fps H.264.
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { DeviceProvider } from '@e2e-dev/mobile';
+import { startEvents } from './events.ts';
+import { FPS, writeClip } from './clip.ts';
+
+export interface SimulatorOptions {
+  /** Simulator name, such as `iPhone 17 Pro`. Default: a booted iPhone, else the last one listed (the newest iOS). */
+  device?: string;
+  /** Pixels per point: 3 on current iPhones, 2 on iPads. */
+  scale?: number;
+  /** Seconds the last frame stays on screen. */
+  hold?: number;
+}
+
+interface Sim {
+  udid: string;
+  name: string;
+  state: string;
+}
+
+const simctl = (...args: string[]) => execFileSync('xcrun', ['simctl', ...args]).toString();
+
+function pick(name: string | undefined): Sim {
+  const runtimes: Record<string, Sim[]> = JSON.parse(simctl('list', 'devices', 'available', '-j')).devices;
+  const sims = Object.entries(runtimes)
+    .filter(([runtime]) => runtime.includes('iOS'))
+    // simctl lists runtimes in no set order: sort by version (`…SimRuntime.iOS-26-4`), oldest first.
+    .sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }))
+    .flatMap(([, list]) => list);
+  const named = name ? sims.filter((s) => s.name === name) : sims.filter((s) => s.name.startsWith('iPhone'));
+  const sim = named.find((s) => s.state === 'Booted') ?? named.at(-1);
+  if (!sim) throw new Error(`screen-capture: no iOS simulator named "${name ?? 'iPhone*'}" (xcrun simctl list devices)`);
+  return sim;
+}
+
+export function simulator({ device, scale = 3, hold = 1 }: SimulatorOptions = {}): DeviceProvider {
+  return {
+    name: 'screen-capture-simulator',
+    async acquire() {
+      const sim = pick(device);
+      if (sim.state !== 'Booted') simctl('bootstatus', sim.udid, '-b');
+      // The status bar every product shot uses, instead of the Mac's clock and battery.
+      simctl('status_bar', sim.udid, 'override', '--time', '9:41', '--batteryState', 'charged', '--batteryLevel', '100',
+        '--cellularBars', '4', '--wifiBars', '3');
+      // `client: {}` drives the device through the local agent-device daemon.
+      return { id: sim.udid, deviceId: sim.udid, client: {} };
+    },
+    async release(lease) {
+      simctl('status_bar', lease.id, 'clear');
+    },
+    async record(lease) {
+      const work = mkdtempSync(path.join(tmpdir(), 'screen-capture-sim-'));
+      const raw = path.join(work, 'raw.mp4');
+      startEvents({ pageTaps: false });
+      const child: ChildProcess = spawn('xcrun', ['simctl', 'io', lease.id, 'recordVideo', '--codec=h264', '--force', raw]);
+      // simctl writes the first frame when it prints this line: that is the clip's time zero.
+      let log = '';
+      await new Promise<void>((resolve, reject) => {
+        const onData = (d: Buffer) => {
+          log += d;
+          if (log.includes('Recording started')) resolve();
+        };
+        child.stdout!.on('data', onData);
+        child.stderr!.on('data', onData);
+        child.on('exit', (code) => reject(new Error(`simctl recordVideo exited with ${code}: ${log}`)));
+      });
+      const t0 = Date.now();
+      return {
+        startedAt: new Date(t0).toISOString(),
+        async stop({ dir }) {
+          // Let the last step's effect paint, then hold the final screen.
+          await sleep(300);
+          const end = Date.now() + hold * 1000;
+          await sleep(hold * 1000);
+          try {
+            // recordVideo runs until SIGINT: an earlier exit (the simulator shut down) left a cut-off video.
+            if (child.exitCode !== null || child.signalCode !== null)
+              throw new Error(`screen-capture: simctl recordVideo stopped during the flow (${child.exitCode ?? child.signalCode}): ${log}`);
+            const exited = new Promise((r) => child.once('exit', r));
+            child.kill('SIGINT');
+            await exited;
+            // simctl writes frames only on change: resample to a constant rate and pad a still ending to `end`.
+            const seconds = ((end - t0) / 1000).toFixed(3);
+            return writeClip(dir, {
+              input: ['-i', raw], filter: `fps=${FPS},tpad=stop_mode=clone:stop_duration=${seconds},`, t0, end, ratio: scale,
+            });
+          } finally {
+            rmSync(work, { recursive: true, force: true });
+          }
+        },
+      };
+    },
+  };
+}
