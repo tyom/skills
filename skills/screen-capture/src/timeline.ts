@@ -33,8 +33,12 @@ interface Size {
   height: number;
 }
 
-/** Places the cropped page (`page`, CSS px) and the text panel on a `canvas` of output pixels. */
-export function layout(canvas: Size, panel: Panel, page: Size, margin = 32) {
+/**
+ * Places the cropped page (`page`, CSS px) and the text panel on a `canvas` of output pixels.
+ * Two `panes` show two clips of the page: side by side, or one above the other with `stack`,
+ * each under a `label` row of that many pixels.
+ */
+export function layout(canvas: Size, panel: Panel, page: Size, { panes = 1, stack = false, label = 0 } = {}, margin = 32) {
   const inner = { width: canvas.width - 2 * margin, height: canvas.height - 2 * margin };
   let area = { x: margin, y: margin, ...inner };
   let text: (Size & { x: number; y: number }) | null = null;
@@ -47,25 +51,33 @@ export function layout(canvas: Size, panel: Panel, page: Size, margin = 32) {
     area = { ...area, height: inner.height - height - margin };
     text = { x: margin, y: canvas.height - margin - height, width: inner.width, height };
   }
-  const scale = Math.min(area.width / page.width, area.height / page.height);
+  const cols = stack ? 1 : panes;
+  const rows = stack ? panes : 1;
+  const scale = Math.min(
+    (area.width - (cols - 1) * margin) / (cols * page.width),
+    (area.height - (rows - 1) * margin - rows * label) / (rows * page.height),
+  );
   const width = Math.round(page.width * scale);
   const height = Math.round(page.height * scale);
-  const slot = {
-    x: Math.round(area.x + (area.width - width) / 2),
-    y: Math.round(area.y + (area.height - height) / 2),
+  const group = { width: cols * width + (cols - 1) * margin, height: rows * (label + height) + (rows - 1) * margin };
+  let x = Math.round(area.x + (area.width - group.width) / 2);
+  let y = Math.round(area.y + (area.height - group.height) / 2);
+  // The panel stays next to the panes, and the whole is centred, so a short page leaves no gap.
+  if (text && panel === 'side') {
+    x = Math.round((canvas.width - (group.width + margin + text.width)) / 2);
+    text.x = x + group.width + margin;
+  } else if (text && panel === 'bottom') {
+    y = Math.round((canvas.height - (group.height + margin + text.height)) / 2);
+    text.y = y + group.height + margin;
+  }
+  const slots = Array.from({ length: panes }, (_, i) => ({
+    x: stack ? x : x + i * (width + margin),
+    y: y + label + (stack ? i * (label + height + margin) : 0),
     width,
     height,
     scale,
-  };
-  // The panel stays next to the page, and the pair is centred, so a short page leaves no gap.
-  if (text && panel === 'side') {
-    slot.x = Math.round((canvas.width - (width + margin + text.width)) / 2);
-    text.x = slot.x + width + margin;
-  } else if (text && panel === 'bottom') {
-    slot.y = Math.round((canvas.height - (height + margin + text.height)) / 2);
-    text.y = slot.y + height + margin;
-  }
-  return { slot, panel: text };
+  }));
+  return { slots, panel: text };
 }
 
 /**
@@ -136,4 +148,33 @@ export function cursor(pointer: { t: number; kind: 'tap' | 'hover'; x: number; y
 interface Point {
   x: number;
   y: number;
+}
+
+/** The part of a clip from `from` to `to` (clip seconds) plays from `at` (output seconds). */
+export interface Segment {
+  from: number;
+  to: number;
+  at: number;
+}
+
+/**
+ * Lines up clips of the same flow so each caption starts at the same output time in all of them.
+ * Every stretch between captions lasts as long as the slowest clip's; a faster clip holds its last
+ * frame for the rest. All clips must have the same number of captions.
+ */
+export function align(clips: { captions: { start: number }[]; duration: number }[]) {
+  const bounds = clips.map((c) => [0, ...c.captions.map((x) => x.start), c.duration]);
+  const lengths = bounds[0].slice(1).map((_, k) => Math.max(...bounds.map((b) => b[k + 1] - b[k])));
+  const ats = lengths.reduce((acc, len) => [...acc, acc.at(-1)! + len], [0]);
+  return {
+    duration: ats.at(-1)!,
+    starts: ats.slice(1, -1),
+    segments: bounds.map((b) => lengths.map((_, k) => ({ from: b[k], to: b[k + 1], at: ats[k] }))),
+  };
+}
+
+/** Output time of clip time `t`. */
+export function retime(segments: Segment[], t: number) {
+  const seg = segments.find((s) => t < s.to) ?? segments.at(-1)!;
+  return seg.at - seg.from + t;
 }

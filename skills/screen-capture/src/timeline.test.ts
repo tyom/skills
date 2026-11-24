@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chain, layout, resample, timeline } from './timeline.ts';
+import { align, chain, layout, resample, retime, timeline } from './timeline.ts';
 
 test('turns wall-clock events into clip seconds, each caption lasting until the next', () => {
   const clip = {
@@ -53,7 +53,7 @@ test('fits the cropped page beside a side panel, centred in the space left', () 
   // video area 1920 - 499 - 3*32 = 1325 wide, 1080 - 2*32 = 1016 tall.
   // scale min(1325/800, 1016/600) = 1.65625 -> 1325x994 (993.75), centred: y = 32 + (1016 - 994) / 2.
   assert.deepEqual(layout({ width: 1920, height: 1080 }, 'side', { width: 800, height: 600 }), {
-    slot: { x: 32, y: 43, width: 1325, height: 994, scale: 1.65625 },
+    slots: [{ x: 32, y: 43, width: 1325, height: 994, scale: 1.65625 }],
     panel: { x: 1389, y: 32, width: 499, height: 1016 },
   });
 });
@@ -68,7 +68,7 @@ test('keeps a bottom panel under a short page, the pair centred vertically', () 
   // 1080x1920, margin 32, panel 20% of the height (384). Video area 1016 wide.
   // scale 1016/500 = 2.032 -> 1016x569 (568.96). Group 569 + 32 + 384 = 985 tall, top (1920 - 985) / 2 = 467.5 -> 468.
   assert.deepEqual(layout({ width: 1080, height: 1920 }, 'bottom', { width: 500, height: 280 }), {
-    slot: { x: 32, y: 468, width: 1016, height: 569, scale: 2.032 },
+    slots: [{ x: 32, y: 468, width: 1016, height: 569, scale: 2.032 }],
     panel: { x: 32, y: 1069, width: 1016, height: 384 },
   });
 });
@@ -95,4 +95,45 @@ test('keeps caption keyframes in order when captions come faster than they ease 
       { t: 5, open: true, opacity: 1 },
     ],
   ]);
+});
+
+test('aligns two clips at each caption, the faster side holding until the slower catches up', () => {
+  // A: captions at 0.5 and 2, ends at 4 -> segments 0.5, 1.5, 2 long. B: captions at 1 and 2, ends at 3 -> 1, 1, 1.
+  // Each output segment takes the longer side: 1, 1.5, 2, so captions start at 1 and 2.5 and the video runs 4.5.
+  const { duration, starts, segments } = align([
+    { captions: [{ start: 0.5 }, { start: 2 }], duration: 4 },
+    { captions: [{ start: 1 }, { start: 2 }], duration: 3 },
+  ]);
+  assert.equal(duration, 4.5);
+  assert.deepEqual(starts, [1, 2.5]);
+  assert.deepEqual(segments[0], [
+    { from: 0, to: 0.5, at: 0 },
+    { from: 0.5, to: 2, at: 1 },
+    { from: 2, to: 4, at: 2.5 },
+  ]);
+  // A tap 0.5s after A's first caption plays 0.5s after the shared caption; B's 0.4s into its last segment likewise.
+  assert.equal(retime(segments[0], 1), 1.5);
+  assert.equal(retime(segments[1], 2.4), 2.9);
+});
+
+test('fits two panes: tall pages in columns, wide pages stacked', () => {
+  // Columns, 1920x1080 side panel (499): area 1325x1016, scale min((1325 - 32) / 800, 1016 / 800) = 1.27 -> 508x1016.
+  // Group 508 + 32 + 508 = 1048; with the panel 1048 + 32 + 499 = 1579, left (1920 - 1579) / 2 = 170.5 -> 171.
+  assert.deepEqual(layout({ width: 1920, height: 1080 }, 'side', { width: 400, height: 800 }, { panes: 2, stack: false }), {
+    slots: [
+      { x: 171, y: 32, width: 508, height: 1016, scale: 1.27 },
+      { x: 711, y: 32, width: 508, height: 1016, scale: 1.27 },
+    ],
+    panel: { x: 1251, y: 32, width: 499, height: 1016 },
+  });
+  // Stacked with a 40px label row above each pane, 1080x1920 bottom panel (384): area 1016x1440,
+  // scale min(1016 / 800, (1440 - 32 - 2 * 40) / 1000) = 1.27 -> 1016x635. Group 2 * (40 + 635) + 32 = 1382;
+  // with the panel 1382 + 32 + 384 = 1798, top (1920 - 1798) / 2 = 61, so panes start at 61 + 40 and 61 + 40 + 635 + 32 + 40.
+  assert.deepEqual(layout({ width: 1080, height: 1920 }, 'bottom', { width: 800, height: 500 }, { panes: 2, stack: true, label: 40 }), {
+    slots: [
+      { x: 32, y: 101, width: 1016, height: 635, scale: 1.27 },
+      { x: 32, y: 808, width: 1016, height: 635, scale: 1.27 },
+    ],
+    panel: { x: 32, y: 1475, width: 1016, height: 384 },
+  });
 });

@@ -27,7 +27,7 @@ Run `node <skill>/src/setup.js` before every recording session, with `--ios` for
 
 ## 2. Scope the flow
 
-From `$ARGUMENTS` or the conversation, pin down: the app URL and the command that starts it (or a live site), the goals to show (in the words the app uses), a caption for each beat, and the output sizes. Ask only for what you cannot infer. Done when every beat is one goal with one visible outcome.
+From `$ARGUMENTS` or the conversation, pin down: the app URL and the command that starts it (or a live site), the goals to show (in the words the app uses), a caption for each beat, and the output sizes. To show a change, such as a bug fix, also pin down the two versions: by default, before is the base the change branches from and after is the working tree. Ask only for what you cannot infer. Done when every beat is one goal with one visible outcome.
 
 ## 3. Write the flow
 
@@ -93,6 +93,27 @@ Rules the code cannot show:
 - The destructured `device` fixture (`device.home()`, `device.openLink()`) has no type in the shared `test`: annotate the fixtures `any` in device flows.
 - Raise `recorder({ dpr })` when compose warns about upscaling.
 
+### Before and after
+
+To show a change, record the same flow on the old and the new app, and compose the two clips under one set of captions.
+
+1. Check out the old version beside the working tree, `git worktree add .screen-capture/before <base>`, and install its dependencies there.
+2. Give each version a target with the same engine and viewport. e2e resolves `cwd` from `.screen-capture/`, and `{port}` expands to the URL's port; pass it with the dev server's own port flag:
+
+   ```ts
+   const app = (cwd: string, port: number) => ({
+     url: `http://localhost:${port}`,
+     command: { executable: 'npm', args: ['run', 'dev', '--', '--port', '{port}'], cwd, log: `.e2e/logs/${port}.log` },
+   });
+   // targets:
+   { name: 'before', engine: web({ viewport: viewports.phone, browser: recorder({ dpr: 3 }) }), app: app('before', 3001) },
+   { name: 'after', engine: web({ viewport: viewports.phone, browser: recorder({ dpr: 3 }) }), app: app('..', 3002) },
+   ```
+
+3. One flow runs on both, so both get the same captions. Caption what the viewer should look for. Check the outcome the change fixes with a soft check that reads once, `expect.soft(await locator.textContent()).toBe('£5.50')`: the before run then fails after recording everything. A waiting check (`await expect.soft(locator).toHaveText(...)`) records its whole timeout, and a hard one stops the before video at the bug.
+4. Record with `--retries 0`, then find each target's folder in `.e2e/report.json`: `run.results[]` has `targetId`, and its last `attempts[]` entry has the `clip.mp4` path among its `artifacts`.
+5. Compose with both folders, before first (§5).
+
 ## 4. Record
 
 From `.screen-capture/`:
@@ -113,13 +134,15 @@ When the flow fails, fix it from what the run recorded:
 2. Fix every later line that screen covers too, not only the failing one: each wrong line costs another full recording.
 3. Rerun one test on one size: `<e2e> run --config e2e.config.ts flows/<name>.e2e.ts:<line of test(> --target <name> --action-timeout 5000 --retries 0`.
 
-Compose only from a passing run.
+Compose only from a passing run; in a before and after, the before run fails only its soft check.
 
 ## 5. Compose
 
 ```bash
 node <skill>/src/compose.ts <video dir> --size portrait --out .screen-capture/out/<name>-portrait.mp4
 ```
+
+For a before and after, pass both folders, before first: `node <skill>/src/compose.ts <before dir> <after dir> --out ...`. Each caption then starts on the same frame in both panes, and between captions the faster side holds its last frame. Tall pages sit side by side and wide pages stack, each under its label: `--labels Bug,Fixed` renames them (default `Before,After`). Compose stops when the two clips' captions or page sizes differ.
 
 `--help` lists the options: `--size`, `--panel none|side|bottom`, `--pointer cursor|tap|none`, `--crop x,y,w,h` in page CSS pixels, `--theme`, `--no-render`. The defaults follow the page: landscape with a side panel for wide pages, portrait with a bottom panel for tall ones, a cursor from 1024 px wide, taps below that. A render takes about 2 to 3 times the clip's length.
 
@@ -130,7 +153,7 @@ The HyperFrames project lands next to the MP4 (`<name>.hyperframes/`). To change
 Done when, for every output:
 
 - `ffprobe` reports `r_frame_rate=60/1` at the requested size. This only checks the container: the recorder always writes 60fps, repeating frames when the capture falls behind. Judder in the viewed frames is the real sign of a slow capture.
-- You have viewed a frame at each caption and each tap time (from `clip.json`, counted from the `begin` event if there is one, else from `startedAt`), and each one shows the right caption, with the pointer on its target.
+- You have viewed a frame at each caption and tap time compose printed, and each one shows the right caption, with the pointer on its target (in both panes for a before and after).
 - Compose printed no upscaling warning, or you told the user about it.
 
 Report the MP4 paths and anything the check turned up.
