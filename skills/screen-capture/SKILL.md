@@ -27,7 +27,7 @@ Run `node <skill>/src/setup.js` before every recording session, with `--ios` for
 
 ## 2. Scope the flow
 
-From `$ARGUMENTS` or the conversation, pin down: the app URL and the command that starts it (or a live site), the goals to show (in the words the app uses), a caption for each beat, the output (a video, a set of screenshots, or both), the output sizes, and the framing: cropped to the page's content (the default) or the full recorded screen (`--crop none` in §5, when the user asks for the full screen; content below the fold is never captured). To show a change, such as a bug fix, also pin down the two versions: by default, before is the base the change branches from and after is the working tree. Ask only for what you cannot infer. Done when every beat is one goal with one visible outcome.
+From `$ARGUMENTS` or the conversation, pin down: the app URL and the command that starts it (or a live site), the goals to show (in the words the app uses), a caption for each beat, the output (a video, a set of screenshots, or both), the output sizes, and the framing: cropped to the page's content (the default) or the full recorded screen (`--crop none` in §5, when the user asks for the full screen; content the flow never scrolls into view is not captured). To show a change, such as a bug fix, also pin down the two versions: by default, before is the base the change branches from and after is the working tree. Ask only for what you cannot infer. Done when every beat is one goal with one visible outcome.
 
 ## 3. Write the flow
 
