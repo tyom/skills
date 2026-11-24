@@ -175,3 +175,33 @@ export function retime(segments: Segment[], t: number) {
   const seg = segments.find((s) => t < s.to) ?? segments.at(-1)!;
   return seg.at - seg.from + t;
 }
+
+/**
+ * The smallest box (pixels) holding every pixel that differs from the background in any of the
+ * RGB frames packed in `data`, each `width` x `height`; null when every frame is background.
+ * The background is the most common colour on the first frame's edges.
+ */
+export function contentBox(data: Uint8Array, width: number, height: number, tolerance = 4) {
+  const counts = new Map<number, number>();
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      if (x > 0 && x < width - 1 && y > 0 && y < height - 1) continue;
+      const i = (y * width + x) * 3;
+      const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  const bg = [...counts].reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+  const [r, g, b] = [bg >> 16, (bg >> 8) & 255, bg & 255];
+  let [left, top, right, bottom] = [width, height, -1, -1];
+  for (let i = 0; i + 2 < data.length; i += 3) {
+    if (Math.max(Math.abs(data[i] - r), Math.abs(data[i + 1] - g), Math.abs(data[i + 2] - b)) <= tolerance) continue;
+    const p = (i / 3) % (width * height);
+    const x = p % width;
+    const y = Math.floor(p / width);
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
+  }
+  return right < 0 ? null : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+}

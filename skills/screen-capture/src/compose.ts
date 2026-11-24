@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { align, chain, cursor, layout, retime, timeline, type Panel, type Segment, type Size } from './timeline.ts';
+import { align, chain, contentBox, cursor, layout, retime, timeline, type Panel, type Segment, type Size } from './timeline.ts';
 import type { RecordedClip } from './clip.ts';
 
 const help = `node compose.ts <video dir> [<after video dir>] [options]
@@ -13,7 +13,8 @@ const help = `node compose.ts <video dir> [<after video dir>] [options]
   --size      landscape | portrait | square | WxH   (default: from the page's shape)
   --panel     none | side | bottom                  (default: side on landscape, bottom otherwise; none without captions)
   --pointer   cursor | tap | none                   (default: cursor for pages 1024px or wider, tap otherwise)
-  --crop      x,y,width,height in page CSS pixels   (default: the whole page)
+  --crop      x,y,width,height in page CSS pixels, or none for the whole page
+              (default: the area any frame shows content in, from the page background)
   --labels    before,after pane labels, such as Bug,Fixed  (default: Before,After)
   --theme     dark | light                          (default: dark)
   --out       output MP4                            (default: <first video dir>/final.mp4)
@@ -81,15 +82,43 @@ const panes = clips.map((c, i) => ({
 const oneOf = <T extends string>(name: string, value: string, options: readonly T[]): T =>
   (options as readonly string[]).includes(value) ? (value as T) : fail(`--${name} must be one of ${options.join(', ')}`);
 
-const crop = values.crop
-  ? (() => {
-      const [x, y, width, height] = values.crop.split(',').map(Number);
-      if ([x, y, width, height].some((n) => !Number.isFinite(n)) || width <= 0 || height <= 0) fail('--crop is x,y,width,height');
-      if (x < 0 || y < 0 || x + width > viewport.width || y + height > viewport.height)
-        fail(`--crop must fit inside the ${viewport.width}x${viewport.height} page`);
-      return { x, y, width, height };
-    })()
-  : { x: 0, y: 0, ...viewport };
+/**
+ * The area of the page that ever shows content, in either clip, padded: the rest is background.
+ * Frames are read at half the CSS size, one a second.
+ */
+function contentCrop() {
+  const w = Math.round(viewport.width / 2);
+  const h = Math.round(viewport.height / 2);
+  const boxes = clips.flatMap((c) => {
+    // shortcut: holds every sampled frame in memory (about 1 MB a second for a desktop page), stream it for clips of many minutes.
+    const data = execFileSync('ffmpeg', [
+      '-v', 'error', '-ss', String(c.offset), '-i', path.join(c.dir, 'clip.mp4'),
+      '-vf', `fps=1,scale=${w}:${h}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
+    ], { maxBuffer: 1 << 30 });
+    const box = contentBox(data, w, h);
+    return box ? [box] : [];
+  });
+  if (!boxes.length) return { x: 0, y: 0, ...viewport };
+  const pad = 24;
+  const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) * 2 - pad);
+  const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) * 2 - pad);
+  const right = Math.min(viewport.width, Math.max(...boxes.map((b) => b.x + b.width)) * 2 + pad);
+  const bottom = Math.min(viewport.height, Math.max(...boxes.map((b) => b.y + b.height)) * 2 + pad);
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+const crop =
+  values.crop === 'none'
+    ? { x: 0, y: 0, ...viewport }
+    : values.crop
+      ? (() => {
+          const [x, y, width, height] = values.crop.split(',').map(Number);
+          if ([x, y, width, height].some((n) => !Number.isFinite(n)) || width <= 0 || height <= 0) fail('--crop is x,y,width,height or none');
+          if (x < 0 || y < 0 || x + width > viewport.width || y + height > viewport.height)
+            fail(`--crop must fit inside the ${viewport.width}x${viewport.height} page`);
+          return { x, y, width, height };
+        })()
+      : contentCrop();
 
 // Wide pages stack, tall pages sit side by side; the canvas follows the shape of the whole.
 const stack = crop.width >= crop.height;
@@ -159,7 +188,7 @@ function pointerParts(i: number, pointer: (typeof panes)[number]['pointer']) {
   let css = '';
   let html = '';
   if (pointerMode === 'cursor' && pointer.length) {
-    const stops = cursor(pointer, { x: viewport.width / 2, y: viewport.height / 2 }, duration).map(
+    const stops = cursor(pointer, { x: crop.x + crop.width / 2, y: crop.y + crop.height / 2 }, duration).map(
       (k) =>
         `${pct(k.t)} { transform: translate(${s(k.x)}px, ${s(k.y)}px) scale(${k.scale});${k.ease ? ' animation-timing-function: cubic-bezier(.45,0,.2,1);' : ''} }`,
     );
@@ -276,7 +305,7 @@ console.log(`compose: captions at ${captions.map((c) => s(c.start)).join(', ') |
 for (const p of panes)
   console.log(`compose: ${p.label ? `${p.label.toLowerCase()} ` : ''}taps at ${p.pointer.filter((e) => e.kind === 'tap').map((e) => s(e.t)).join(', ') || 'none'} s`);
 console.log(
-  `compose: ${canvas.width}x${canvas.height}, ${compare ? `before/after ${stack ? 'stacked' : 'side by side'}, ` : ''}panel ${panel}, pointer ${pointerMode}, ${duration}s -> ${project}`,
+  `compose: ${canvas.width}x${canvas.height}, ${compare ? `before/after ${stack ? 'stacked' : 'side by side'}, ` : ''}crop ${crop.x},${crop.y},${crop.width},${crop.height}, panel ${panel}, pointer ${pointerMode}, ${duration}s -> ${project}`,
 );
 
 if (!values['no-render']) {

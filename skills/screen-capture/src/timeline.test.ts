@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { align, chain, layout, resample, retime, timeline } from './timeline.ts';
+import { align, chain, contentBox, layout, resample, retime, timeline } from './timeline.ts';
 
 test('turns wall-clock events into clip seconds', () => {
   const clip = {
@@ -136,4 +136,15 @@ test('fits two panes: tall pages in columns, wide pages stacked', () => {
     ],
     panel: { x: 32, y: 1475, width: 1016, height: 384 },
   });
+});
+
+test('finds the box around everything that differs from the background, across frames', () => {
+  // Two 6x4 RGB frames on a light background (250): a dark pixel at (1,1) in the first,
+  // a blue one at (4,2) in the second. Edge noise under the tolerance is ignored.
+  const bg = [250, 250, 250];
+  const frame = (marks: Record<string, number[]>) =>
+    Array.from({ length: 24 }, (_, i) => marks[`${i % 6},${Math.floor(i / 6)}`] ?? bg).flat();
+  const data = Uint8Array.from([...frame({ '1,1': [20, 20, 20], '0,0': [247, 250, 252] }), ...frame({ '4,2': [30, 90, 240] })]);
+  assert.deepEqual(contentBox(data, 6, 4), { x: 1, y: 1, width: 4, height: 2 });
+  assert.equal(contentBox(Uint8Array.from(frame({})), 6, 4), null);
 });
