@@ -16,13 +16,17 @@ npx skills add tyom/skills
 
 ## Skills
 
-- `explainer` — Builds a self-contained, interactive HTML explainer for any subject (repo, spec, API, or concept), grounded in its real source so a reader can retell it. Profiles the reader (from the conversation and local git history, or `--reader`) to pick analogies; `--brief` gives a one-screen overview, and a proxy-reader subagent checks the page teaches. Slash-only (`/explainer`).
-- `explain-diff` — Explains a code change (local diff, branch, commit range, or GitHub PR) as a self-contained HTML page: background, intuition, code walkthrough, and a comprehension quiz. Inspired by [explain-diff-html](https://gist.github.com/geoffreylitt/a29df1b5f9865506e8952488eac3d524).
-- [**flow**](skills/flow/README.md) — Traces a flow through its real source — a request lifecycle, pipeline, state machine, or user journey — and renders it as an interactive graph with a detail panel per step, one or more flows as tabs. Slash-only (`/flow`).
-- `humanizer` — Rewrites prose so it reads like a person wrote it: finds the AI tells, works on what each one covers, and keeps the writer's own register. Model-invoked, so it also fires when prose is the deliverable.
-- `micro-world` — Builds a self-contained interactive simulation of code or a concept: a working model with objects, rules, and knobs, learned by poking. Simulation, not exposition. Slash-only (`/micro-world`).
-- `screen-capture` — Records a scripted web flow at 60fps and 2x, or an iOS Simulator flow at its native resolution, with [e2e](https://github.com/e2e-inc/e2e), then renders it with [HyperFrames](https://github.com/heygen-com/hyperframes) as a portrait, landscape or square MP4 with captions and a drawn cursor or taps, or as a set of captioned screenshots; either can be a before-and-after pair of the same flow under shared captions. Steps can be plain-language goals run by the Claude Code or Codex login you already have, with exact steps as the fallback. Open-source dependencies only. Android is next. Slash-only (`/screen-capture`).
-- `ungit` — Fetches a GitHub repo, directory, or file as LLM-friendly text, with include/exclude filters. Needs the [`ungit`](https://github.com/tyom/ungit) CLI (`brew install tyom/tap/ungit`).
+| Skill | What it does | Runs |
+|---|---|---|
+| **explainer** | Builds an interactive HTML explainer for a repo, spec, API or concept, pitched at the reader | `/explainer` |
+| **explain-diff** | Explains a diff, branch, commit range or PR as an HTML page with a walkthrough and quiz | auto |
+| [**flow**](skills/flow/README.md) | Traces a request, pipeline, state machine or user journey through real source as an interactive graph | `/flow` |
+| **humanizer** | Rewrites prose so it reads like a person wrote it | auto |
+| **micro-world** | Builds an interactive simulation of code or a concept, with knobs to poke | `/micro-world` |
+| **screen-capture** | Records a scripted web or iOS Simulator flow and renders a captioned MP4 or screenshots | `/screen-capture` |
+| **ungit** | Fetches a GitHub repo, directory or file as LLM-friendly text. Needs the [`ungit`](https://github.com/tyom/ungit) CLI | auto |
+
+**Runs:** `/name` means slash-only. **auto** means the agent can also invoke it on its own.
 
 ## Local development
 
