@@ -96,12 +96,18 @@ async function clipContent(c: (typeof clips)[number], w: number, h: number) {
     '-vf', `scale=${w}:${h}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
   ], { stdio: ['ignore', 'pipe', 'inherit'] });
   const size = w * h * 3;
-  let pending = Buffer.alloc(0);
+  // One frame buffer, filled chunk by chunk: a chunk can end one frame and start the next.
+  const frame = Buffer.alloc(size);
+  let filled = 0;
   let union = null as { left: number; top: number; right: number; bottom: number } | null;
-  for await (const chunk of ffmpeg.stdout) {
-    pending = Buffer.concat([pending, chunk]);
-    for (; pending.length >= size; pending = pending.subarray(size)) {
-      const b = contentBox(pending.subarray(0, size), w, h);
+  for await (const chunk of ffmpeg.stdout as AsyncIterable<Buffer>) {
+    for (let at = 0; at < chunk.length; ) {
+      const n = chunk.copy(frame, filled, at);
+      filled += n;
+      at += n;
+      if (filled < size) break;
+      filled = 0;
+      const b = contentBox(frame, w, h);
       if (!b) continue;
       union = {
         left: Math.min(union?.left ?? b.x, b.x),
@@ -160,7 +166,7 @@ const canvas: Size = values.size
   : shape.width >= shape.height
     ? named.landscape
     : named.portrait;
-if (!(canvas.width > 0 && canvas.height > 0) || canvas.width % 2 || canvas.height % 2) fail('--size needs positive even numbers for H.264');
+if (![canvas.width, canvas.height].every((n) => Number.isSafeInteger(n) && n > 0 && n % 2 === 0)) fail('--size needs positive even numbers for H.264');
 
 const panel: Panel = values.panel
   ? oneOf('panel', values.panel, ['none', 'side', 'bottom'] as const)
