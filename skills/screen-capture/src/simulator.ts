@@ -1,18 +1,19 @@
 // An e2e DeviceProvider for a local iOS Simulator whose `record` writes the same
 // clip.mp4 and clip.json as the web recorder: native pixels, constant 60fps H.264.
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DeviceProvider } from '@e2e-dev/mobile';
-import { startEvents, takeEvents } from './events.ts';
+import { startEvents } from './events.ts';
+import { FPS, writeClip } from './clip.ts';
 
 export interface SimulatorOptions {
   /** Simulator name, such as `iPhone 17 Pro`. Default: a booted iPhone, else the last one listed (the newest iOS). */
   device?: string;
   /** Pixels per point: 3 on current iPhones, 2 on iPads. */
   scale?: number;
-  fps?: number;
   /** Seconds the last frame stays on screen. */
   hold?: number;
 }
@@ -38,7 +39,7 @@ function pick(name: string | undefined): Sim {
   return sim;
 }
 
-export function simulator({ device, scale = 3, fps = 60, hold = 1 }: SimulatorOptions = {}): DeviceProvider {
+export function simulator({ device, scale = 3, hold = 1 }: SimulatorOptions = {}): DeviceProvider {
   return {
     name: 'screen-capture-simulator',
     async acquire() {
@@ -74,43 +75,22 @@ export function simulator({ device, scale = 3, fps = 60, hold = 1 }: SimulatorOp
         startedAt: new Date(t0).toISOString(),
         async stop({ dir }) {
           // Let the last step's effect paint, then hold the final screen.
-          await new Promise((r) => setTimeout(r, 300));
+          await sleep(300);
           const end = Date.now() + hold * 1000;
-          await new Promise((r) => setTimeout(r, end - Date.now()));
+          await sleep(hold * 1000);
           // A recorder that already died has fired its exit event; waiting for it would hang.
           if (child.exitCode === null && child.signalCode === null) {
             const exited = new Promise((r) => child.once('exit', r));
             child.kill('SIGINT');
             await exited;
           }
-          const seconds = ((end - t0) / 1000).toFixed(3);
           // simctl writes frames only on change: resample to a constant rate and pad a still ending to `end`.
-          execFileSync('ffmpeg', [
-            '-v', 'error', '-y', '-i', raw,
-            '-vf', `fps=${fps},tpad=stop_mode=clone:stop_duration=${seconds},crop=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
-            '-t', seconds, '-c:v', 'libx264', '-crf', '14', '-preset', 'medium', '-g', String(fps),
-            '-movflags', '+faststart', path.join(dir, 'clip.mp4'),
-          ]);
-          const [width, height] = execFileSync('ffprobe', [
-            '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0',
-            path.join(dir, 'clip.mp4'),
-          ]).toString().trim().split(',').map(Number);
-          writeFileSync(
-            path.join(dir, 'clip.json'),
-            JSON.stringify(
-              {
-                startedAt: t0,
-                endedAt: end,
-                viewport: { width: Math.round(width / scale), height: Math.round(height / scale) },
-                video: { width, height },
-                events: takeEvents(),
-              },
-              null,
-              2,
-            ),
-          );
+          const seconds = ((end - t0) / 1000).toFixed(3);
+          const clip = writeClip(dir, {
+            input: ['-i', raw], filter: `fps=${FPS},tpad=stop_mode=clone:stop_duration=${seconds},`, t0, end, ratio: scale,
+          });
           rmSync(work, { recursive: true, force: true });
-          return { file: 'clip.mp4' };
+          return clip;
         },
       };
     },

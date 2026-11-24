@@ -1,6 +1,7 @@
 // Flow helpers: each one stamps an event on the same clock as the recorder's
 // frames (Date.now()) and paces the flow so a viewer can follow it.
 import type { Locator, TestFixtures } from 'e2e';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { harness } from './agent.ts';
 
 export type CaptureEvent =
@@ -32,7 +33,6 @@ function pushTap(point: { x: number; y: number }) {
   if (store[key] && !store[key].pageTaps) push({ t: Date.now(), kind: 'tap', ...point });
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Time for the drawn cursor to travel before an action; a device draws taps only, so it waits none. */
 const LEAD = 600;

@@ -16,11 +16,7 @@ export function timeline({ startedAt, endedAt, events }: Clip) {
   const duration = sec(endedAt - begin);
   const sorted = events.filter((e) => mark === undefined || e.t >= mark).sort((a, b) => a.t - b.t);
   const texts = sorted.filter((e) => e.kind === 'caption');
-  const captions = texts.map((e, i) => ({
-    start: sec(e.t - begin),
-    end: i + 1 < texts.length ? sec(texts[i + 1].t - begin) : duration,
-    text: e.text,
-  }));
+  const captions = texts.map((e) => ({ start: sec(e.t - begin), text: e.text }));
   const pointer = sorted.flatMap((e) =>
     e.kind === 'tap' || e.kind === 'hover' ? [{ t: sec(e.t - begin), kind: e.kind, x: e.x, y: e.y }] : [],
   );
@@ -28,7 +24,7 @@ export function timeline({ startedAt, endedAt, events }: Clip) {
 }
 
 export type Panel = 'none' | 'side' | 'bottom';
-interface Size {
+export interface Size {
   width: number;
   height: number;
 }
@@ -38,7 +34,8 @@ interface Size {
  * Two `panes` show two clips of the page: side by side, or one above the other with `stack`,
  * each under a `label` row of that many pixels.
  */
-export function layout(canvas: Size, panel: Panel, page: Size, { panes = 1, stack = false, label = 0 } = {}, margin = 32) {
+export function layout(canvas: Size, panel: Panel, page: Size, { panes = 1, stack = false, label = 0 } = {}) {
+  const margin = 32;
   const inner = { width: canvas.width - 2 * margin, height: canvas.height - 2 * margin };
   let area = { x: margin, y: margin, ...inner };
   let text: (Size & { x: number; y: number }) | null = null;

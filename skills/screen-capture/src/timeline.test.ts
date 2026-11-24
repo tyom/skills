@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { align, chain, layout, resample, retime, timeline } from './timeline.ts';
 
-test('turns wall-clock events into clip seconds, each caption lasting until the next', () => {
+test('turns wall-clock events into clip seconds', () => {
   const clip = {
     startedAt: 1000,
     endedAt: 9000,
@@ -17,8 +17,8 @@ test('turns wall-clock events into clip seconds, each caption lasting until the 
     offset: 0,
     duration: 8,
     captions: [
-      { start: 0, end: 3, text: 'A' },
-      { start: 3, end: 8, text: 'B' },
+      { start: 0, text: 'A' },
+      { start: 3, text: 'B' },
     ],
     pointer: [
       { t: 1.25, kind: 'tap', x: 10, y: 20 },
@@ -43,7 +43,7 @@ test('starts the clip at begin(), dropping what came before it', () => {
   assert.deepEqual(timeline(clip), {
     offset: 2,
     duration: 6,
-    captions: [{ start: 1, end: 6, text: 'B' }],
+    captions: [{ start: 1, text: 'B' }],
     pointer: [{ t: 2, kind: 'tap', x: 10, y: 20 }],
   });
 });

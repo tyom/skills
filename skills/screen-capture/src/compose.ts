@@ -2,10 +2,11 @@
 // Two clips of the same flow (before and after a change) play in two panes under shared captions.
 // Usage: node compose.ts <video dir> [<after video dir>] [options], see --help.
 import { parseArgs } from 'node:util';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { align, chain, cursor, layout, retime, timeline, type Panel, type Segment } from './timeline.ts';
+import { align, chain, cursor, layout, retime, timeline, type Panel, type Segment, type Size } from './timeline.ts';
+import type { RecordedClip } from './clip.ts';
 
 const help = `node compose.ts <video dir> [<after video dir>] [options]
   Two video dirs: before and after a change, side by side (stacked for wide pages), aligned at each caption.
@@ -45,14 +46,10 @@ if (values.help) {
 if (!positionals.length) fail('pass the video dir that holds clip.mp4 and clip.json');
 if (positionals.length > 2) fail('pass one video dir, or two: before, then after');
 
-interface Size {
-  width: number;
-  height: number;
-}
 const clips = positionals.map((dir) => {
   if (!existsSync(path.join(dir, 'clip.json'))) fail(`no clip.json in ${dir}; record with the screen-capture recorder`);
-  const clip = JSON.parse(readFileSync(path.join(dir, 'clip.json'), 'utf8'));
-  return { dir, ...(clip as { viewport: Size; video: Size }), ...timeline(clip) };
+  const clip: RecordedClip = JSON.parse(readFileSync(path.join(dir, 'clip.json'), 'utf8'));
+  return { dir, viewport: clip.viewport, video: clip.video, ...timeline(clip) };
 });
 const compare = clips.length === 2;
 const { viewport, video } = clips[0];
@@ -70,15 +67,15 @@ const labels = values.labels!.split(',').map((l) => l.trim());
 if (labels.length !== 2 || labels.some((l) => !l)) fail('--labels is two names, before then after, such as Bug,Fixed');
 if (!compare && values.labels !== 'Before,After') console.warn('compose: --labels applies only to a before and after');
 
-// Two clips play on one timeline: each caption starts at the same moment in both.
-const aligned = compare ? align(clips) : undefined;
-const duration = aligned?.duration ?? clips[0].duration;
-const captions = clips[0].captions.map((c, i) => ({ ...c, start: aligned?.starts[i] ?? c.start }));
+// Two clips play on one timeline: each caption starts at the same moment in both (one clip maps onto itself).
+const aligned = align(clips);
+const { duration } = aligned;
+const captions = clips[0].captions.map((c, i) => ({ ...c, start: aligned.starts[i] }));
 const panes = clips.map((c, i) => ({
   ...c,
   src: compare ? `${['before', 'after'][i]}.mp4` : 'clip.mp4',
   label: compare ? labels[i] : undefined,
-  pointer: aligned ? c.pointer.map((e) => ({ ...e, t: retime(aligned.segments[i], e.t) })) : c.pointer,
+  pointer: c.pointer.map((e) => ({ ...e, t: retime(aligned.segments[i], e.t) })),
 }));
 
 const oneOf = <T extends string>(name: string, value: string, options: readonly T[]): T =>
@@ -96,7 +93,7 @@ const crop = values.crop
 
 // Wide pages stack, tall pages sit side by side; the canvas follows the shape of the whole.
 const stack = crop.width >= crop.height;
-const shape = !compare ? crop : stack ? { width: crop.width, height: 2 * crop.height } : { width: 2 * crop.width, height: crop.height };
+const shape = stack ? { width: crop.width, height: panes.length * crop.height } : { width: panes.length * crop.width, height: crop.height };
 const named: Record<string, Size> = {
   landscape: { width: 1920, height: 1080 },
   portrait: { width: 1080, height: 1920 },
@@ -144,45 +141,46 @@ const s = (n: number) => +n.toFixed(3);
 const pct = (t: number) => `${s((Math.min(Math.max(t, 0), duration) / duration) * 100)}%`;
 
 // Pointer: positions are page CSS px; the stage transform scales and crops them with the video.
-let pointerCss = '';
-if (pointerMode === 'cursor')
-  pointerCss += `
+const pointerCss = {
+  cursor: `
     .cursor { left: 0; top: 0; width: 22px; height: 30px; z-index: 3; transform-origin: 2px 2px; }
     .ring { width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 3px solid var(--accent); z-index: 2; animation: ring 0.6s ease-out both; }
-    @keyframes ring { from { transform: scale(0.3); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }`;
-else if (pointerMode === 'tap')
-  pointerCss += `
+    @keyframes ring { from { transform: scale(0.3); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }`,
+  tap: `
     .touch { width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(255,255,255,.55); border: 2px solid rgba(0,0,0,.35); box-shadow: 0 2px 10px rgba(0,0,0,.25); z-index: 2; animation: touch 0.72s ease-out both; }
-    @keyframes touch { 0% { transform: scale(1.4); opacity: 0; } 16.7% { transform: scale(1); opacity: 1; } 30% { transform: scale(0.85); } 65% { transform: scale(0.85); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }`;
+    @keyframes touch { 0% { transform: scale(1.4); opacity: 0; } 16.7% { transform: scale(1); opacity: 1; } 30% { transform: scale(0.85); } 65% { transform: scale(0.85); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }`,
+  none: '',
+}[pointerMode];
+/** The mark each tap leaves: a ring around the cursor, or a touch that starts just before the tap. */
+const mark = pointerMode === 'cursor' ? { cls: 'ring', lead: 0, dur: 0.6 } : { cls: 'touch', lead: 0.12, dur: 0.72 };
 
-function pointerHtml(i: number, pointer: (typeof panes)[number]['pointer']) {
+function pointerParts(i: number, pointer: (typeof panes)[number]['pointer']) {
+  if (pointerMode === 'none') return { css: '', html: '' };
+  let css = '';
   let html = '';
   if (pointerMode === 'cursor' && pointer.length) {
     const stops = cursor(pointer, { x: viewport.width / 2, y: viewport.height / 2 }, duration).map(
       (k) =>
         `${pct(k.t)} { transform: translate(${s(k.x)}px, ${s(k.y)}px) scale(${k.scale});${k.ease ? ' animation-timing-function: cubic-bezier(.45,0,.2,1);' : ''} }`,
     );
-    pointerCss += `
+    css = `
     @keyframes cursor-move-${i} { ${[...new Set(stops)].join('\n      ')} }`;
-    html += `
+    html = `
           <svg id="cursor-${i}" class="clip cursor" data-start="0" data-duration="${duration}" viewBox="0 0 22 30" aria-hidden="true" style="animation: cursor-move-${i} ${duration}s linear both">
             <path d="M2 2 L2 24 L8 18.5 L12.2 27.5 L16 25.8 L11.9 17 L19.5 17 Z" fill="#111" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
           </svg>`;
   }
   pointer.forEach((e, k) => {
-    if (e.kind !== 'tap') return;
-    if (pointerMode === 'cursor')
+    if (e.kind === 'tap')
       html += `
-          <div id="ring-${i}-${k}" class="clip ring" data-start="${s(e.t)}" data-duration="0.6" style="left: ${s(e.x)}px; top: ${s(e.y)}px"></div>`;
-    else if (pointerMode === 'tap')
-      html += `
-          <div id="touch-${i}-${k}" class="clip touch" data-start="${s(Math.max(0, e.t - 0.12))}" data-duration="0.72" style="left: ${s(e.x)}px; top: ${s(e.y)}px"></div>`;
+          <div id="${mark.cls}-${i}-${k}" class="clip ${mark.cls}" data-start="${s(Math.max(0, e.t - mark.lead))}" data-duration="${mark.dur}" style="left: ${s(e.x)}px; top: ${s(e.y)}px"></div>`;
   });
-  return html;
+  return { css, html };
 }
 
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
 
+const pointers = panes.map((p, i) => pointerParts(i, p.pointer));
 const panesHtml = panes
   .map(
     (p, i) => `${p.label ? `
@@ -190,7 +188,7 @@ const panesHtml = panes
     <div class="slot" style="left: ${slots[i].x}px; top: ${slots[i].y}px; width: ${slots[i].width}px; height: ${slots[i].height}px">
       <div class="stage">
         <div class="page">
-          <video id="screen-${i}" class="clip screen" src="${p.src}" muted playsinline data-start="0" data-duration="${duration}" data-playback-start="${compare ? 0 : p.offset}"></video>${pointerHtml(i, p.pointer)}
+          <video id="screen-${i}" class="clip screen" src="${p.src}" muted playsinline data-start="0" data-duration="${duration}" data-playback-start="${compare ? 0 : p.offset}"></video>${pointers[i].html}
         </div>
       </div>
     </div>`,
@@ -201,21 +199,22 @@ const panesHtml = panes
 // so no height is measured) and pushes the older ones up, which fade and leave after three more lines.
 const lineCss = (k: { open: boolean; opacity: number }) =>
   k.open ? `grid-template-rows: 1fr; opacity: ${k.opacity}; transform: none` : 'grid-template-rows: 0fr; opacity: 0; transform: translateY(0.6em)';
-let chainCss = '';
-const chainHtml = box
-  ? chain(captions, duration)
-      .map((stops, i) => {
-        chainCss += `
-    @keyframes line-${i} { ${stops.map((k) => `${pct(k.t)} { ${lineCss(k)}; animation-timing-function: cubic-bezier(.2,.7,.2,1); }`).join(' ')} }`;
-        return `
-        <div id="line-${i}" class="line" style="animation-name: line-${i}"><p>${escape(captions[i].text)}</p></div>`;
-      })
-      .join('')
-  : '';
-const captionHtml = box
+const lines = box ? chain(captions, duration) : [];
+const chainCss = lines
+  .map(
+    (stops, i) => `
+    @keyframes line-${i} { ${stops.map((k) => `${pct(k.t)} { ${lineCss(k)}; animation-timing-function: cubic-bezier(.2,.7,.2,1); }`).join(' ')} }`,
+  )
+  .join('');
+const panelHtml = box
   ? `
-      <div id="chain" class="clip" data-start="0" data-duration="${duration}">${chainHtml}
-      </div>`
+    <div id="panel" style="left: ${box.x}px; top: ${box.y}px; width: ${box.width}px; height: ${box.height}px">
+      <div id="chain" class="clip" data-start="0" data-duration="${duration}">${lines
+        .map((_, i) => `
+        <div id="line-${i}" class="line" style="animation-name: line-${i}"><p>${escape(captions[i].text)}</p></div>`)
+        .join('')}
+      </div>
+    </div>`
   : '';
 const colours = theme === 'dark' ? { bg: '#0e0f12', fg: '#f4f4f5', accent: '#5b9dff' } : { bg: '#f2f2ef', fg: '#141414', accent: '#2563eb' };
 
@@ -234,17 +233,15 @@ const html = `<!doctype html>
     .page { position: absolute; left: ${-crop.x}px; top: ${-crop.y}px; width: ${viewport.width}px; height: ${viewport.height}px; }
     .screen { left: 0; top: 0; width: 100%; height: 100%; }
     .label { position: absolute; height: ${label}px; padding-left: ${Math.round(radius / 2)}px; color: var(--fg); opacity: .75; font: 600 ${Math.round(fontSize * 0.7)}px/${label * 0.8}px -apple-system, "Segoe UI", Inter, Roboto, sans-serif; letter-spacing: .02em; }
-    #panel { position: absolute; ${box ? `left: ${box.x}px; top: ${box.y}px; width: ${box.width}px; height: ${box.height}px;` : 'display: none;'} }
+    #panel { position: absolute; }
     #chain { left: 0; right: 0; top: 0; bottom: ${panel === 'bottom' ? 0 : `calc(50% - ${fontSize}px)`}; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
     .line { display: grid; animation-duration: ${duration}s; animation-timing-function: linear; animation-fill-mode: both; }
     .line p { min-height: 0; overflow: hidden; padding-top: ${Math.round(fontSize * 0.45)}px; color: var(--fg); font: 600 ${fontSize}px/1.25 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; letter-spacing: -0.01em; text-align: ${panel === 'bottom' ? 'center' : 'left'}; }${chainCss}
-${pointerCss}
+${pointerCss}${pointers.map((p) => p.css).join('')}
   </style>
 </head>
 <body>
-  <div id="root" data-composition-id="main" data-start="0" data-duration="${duration}" data-width="${canvas.width}" data-height="${canvas.height}" data-no-timeline>${panesHtml}
-    <div id="panel">${captionHtml}
-    </div>
+  <div id="root" data-composition-id="main" data-start="0" data-duration="${duration}" data-width="${canvas.width}" data-height="${canvas.height}" data-no-timeline>${panesHtml}${panelHtml}
   </div>
 </body>
 </html>
@@ -259,7 +256,8 @@ function alignVideo(src: string, offset: number, segments: Segment[], out: strin
   execFileSync('ffmpeg', [
     '-v', 'error', '-y', '-i', src,
     '-vf', `trim=start=${offset},setpts=PTS-STARTPTS,setpts='(${shift})/TB',fps=60,tpad=stop_mode=clone:stop_duration=${duration},format=yuv420p`,
-    '-t', String(duration), '-c:v', 'libx264', '-crf', '14', '-preset', 'medium', '-g', '60', '-movflags', '+faststart', out,
+    // Only an input to the render, which encodes again: a fast near-lossless encode.
+    '-t', String(duration), '-c:v', 'libx264', '-crf', '10', '-preset', 'veryfast', '-g', '60', out,
   ]);
 }
 
@@ -268,8 +266,9 @@ const project = out.replace(/\.mp4$/, '') + '.hyperframes';
 mkdirSync(project, { recursive: true });
 panes.forEach((p, i) => {
   const src = path.join(p.dir, 'clip.mp4');
-  if (aligned) alignVideo(src, p.offset, aligned.segments[i], path.join(project, p.src));
-  else copyFileSync(src, path.join(project, p.src));
+  // One clip needs no re-timing: HyperFrames skips its offset (data-playback-start).
+  if (compare) alignVideo(src, p.offset, aligned.segments[i], path.join(project, p.src));
+  else copyFileSync(src, path.join(project, p.src), constants.COPYFILE_FICLONE);
 });
 writeFileSync(path.join(project, 'index.html'), html);
 // The output times to check frames at.
