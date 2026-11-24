@@ -1,6 +1,7 @@
 // Flow helpers: each one stamps an event on the same clock as the recorder's
 // frames (Date.now()) and paces the flow so a viewer can follow it.
 import type { Locator, TestFixtures } from 'e2e';
+import { harness } from './agent.ts';
 
 export type CaptureEvent =
   | { t: number; kind: 'caption'; text: string }
@@ -8,32 +9,40 @@ export type CaptureEvent =
   | { t: number; kind: 'begin' };
 
 // One list per worker, shared across module copies; the recorder starts and takes it.
+// `pageTaps`: the web recorder logs taps from the page itself, so the helpers log none there.
 const key = Symbol.for('screen-capture.events');
-const store = globalThis as unknown as Record<symbol, CaptureEvent[] | undefined>;
+const store = globalThis as unknown as Record<symbol, { events: CaptureEvent[]; pageTaps: boolean } | undefined>;
 
-export function startEvents() {
-  store[key] = [];
+export function startEvents({ pageTaps }: { pageTaps: boolean }) {
+  store[key] = { events: [], pageTaps };
 }
 
 export function takeEvents(): CaptureEvent[] {
-  const events = store[key] ?? [];
+  const events = store[key]?.events ?? [];
   store[key] = undefined;
   return events;
 }
 
 export function push(event: CaptureEvent) {
-  store[key]?.push(event);
+  store[key]?.events.push(event);
+}
+
+/** Logs a tap the page cannot log itself: on a device, after the tap lands. */
+function pushTap(point: { x: number; y: number }) {
+  if (store[key] && !store[key].pageTaps) push({ t: Date.now(), kind: 'tap', ...point });
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Time for the drawn cursor to travel before an action. */
+/** Time for the drawn cursor to travel before an action; a device draws taps only, so it waits none. */
 const LEAD = 600;
+const lead = () => sleep(store[key]?.pageTaps === false ? 0 : LEAD);
 /** Time to let the result of an action show before the next step. */
 const SETTLE = 500;
 
 async function centre(locator: Locator) {
-  await locator.scrollIntoView();
+  // A device has no scrollIntoView (UNSUPPORTED_CAPABILITY); its tap scrolls the target into view itself.
+  await locator.scrollIntoView().catch(() => {});
   const box = await locator.boundingBox();
   if (!box) throw new Error('screen-capture: the target has no bounding box');
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -52,17 +61,17 @@ export async function caption(text: string, readMs = 1200) {
   await sleep(readMs);
 }
 
-// Taps are not pushed here: the recorder logs every pointerdown from the page itself.
 export async function tap(locator: Locator) {
-  await centre(locator);
-  await sleep(LEAD);
+  const point = await centre(locator);
+  await lead();
   await locator.tap();
+  pushTap(point);
   await sleep(SETTLE);
 }
 
 export async function hover(locator: Locator) {
   const point = await centre(locator);
-  await sleep(LEAD);
+  await lead();
   await locator.hover();
   push({ t: Date.now(), kind: 'hover', ...point });
   await sleep(SETTLE);
@@ -70,9 +79,10 @@ export async function hover(locator: Locator) {
 
 /** Taps the field, then types visibly, one key at a time. */
 export async function type(locator: Locator, text: string, keyDelay = 60) {
-  await centre(locator);
-  await sleep(LEAD);
+  const point = await centre(locator);
+  await lead();
   await locator.tap();
+  pushTap(point);
   await locator.pressSequentially(text, { delay: keyDelay });
   await sleep(SETTLE);
 }
@@ -85,11 +95,14 @@ export const pause = sleep;
  * `fallback` holds the exact steps, run when no coding agent is available or the goal fails.
  */
 export async function act(agent: TestFixtures['agent'], goal: string, fallback?: () => Promise<void>) {
+  // No coding agent: run the exact steps without a doomed model call or a cache replay.
+  if (fallback && harness() === 'none') return fallback();
   try {
     await agent.act(goal, {
-      onBeforeAction: () => sleep(LEAD),
+      onBeforeAction: lead,
       onAction: async (event) => {
         if (event.action === 'hoverAt') push({ t: Date.now(), kind: 'hover', ...event.point });
+        if (event.action === 'tapAt') pushTap(event.point);
         await sleep(SETTLE);
       },
     });

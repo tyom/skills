@@ -1,6 +1,6 @@
 ---
 name: screen-capture
-description: "Records a scripted web flow at 60fps and 2x, and renders it as a portrait, landscape or square MP4 with captions and a drawn cursor or taps."
+description: "Records a scripted web or iOS Simulator flow at 60fps, and renders it as a portrait, landscape or square MP4 with captions and a drawn cursor or taps."
 argument-hint: "<the flow to show, the app URL, and the sizes>"
 disable-model-invocation: true
 # Auto-approved while the skill runs: the compose script and frame checks.
@@ -12,15 +12,17 @@ allowed-tools:
 
 # Screen capture
 
-Turn a scripted flow into a showcase video. [e2e](https://github.com/e2e-inc/e2e) drives the browser, this skill's recorder captures it at 60fps and the device pixel ratio, and [HyperFrames](https://github.com/heygen-com/hyperframes) composes the clip with captions and a pointer. Every dependency is open source (mostly MIT and Apache-2.0; `sharp`'s libvips binary is LGPL-3.0) with no paid tier, so it suits side projects and companies alike.
+Turn a scripted flow into a showcase video. [e2e](https://github.com/e2e-inc/e2e) drives the browser or simulator, this skill's recorders capture it at 60fps (the browser at its device pixel ratio, the simulator at its native resolution), and [HyperFrames](https://github.com/heygen-com/hyperframes) composes the clip with captions and a pointer. Every dependency is open source (mostly MIT and Apache-2.0; `sharp`'s libvips binary is LGPL-3.0) with no paid tier, so it suits side projects and companies alike.
 
-Web only for now. iOS Simulator and Android emulator capture are not built yet; say so if asked.
+Web and iOS Simulator (macOS with Xcode). Android emulator capture is not built yet; say so if asked.
 
 `<skill>` below is the folder holding this file, and `<e2e>` is `E2E_TELEMETRY_DISABLED=1 <skill>/node_modules/.bin/e2e`. For e2e's own API (locators, actions, matchers, error codes), run `<e2e> guide writing-tests` or `<e2e> guide debugging`: they print the docs of the pinned version.
 
 ## 1. Set up (first run)
 
 If `<skill>/node_modules` is missing, run in `<skill>`: `bun install`, then `bunx playwright install chromium`. The first render also downloads HyperFrames' own Chrome.
+
+For iOS, check that `xcrun simctl list devices available` lists an iPhone simulator.
 
 Then install the adapter for the harness you run in, so `agent.act` goals run on its existing login (no API key). Use `--no-save`, and repeat it after any `bun install`, which removes it:
 
@@ -58,6 +60,14 @@ export default {
 } satisfies E2EConfig;
 ```
 
+For an iOS Simulator target, add `mobile` and `simulator` to the import, and name the app instead of a URL:
+
+```ts
+{ name: 'iphone', engine: mobile({ platform: 'ios', device: simulator({ device: 'iPhone 17 Pro' }) }), app: { bundleId: 'com.apple.mobilesafari' } },
+```
+
+`simulator()` boots the named simulator (default: a booted iPhone, else the last one listed, on the newest iOS), sets the status bar to 9:41 with a full battery, and records native pixels (`scale` is 3 on iPhones, pass 2 for an iPad).
+
 `flows/<name>.e2e.ts`:
 
 ```ts
@@ -85,6 +95,9 @@ Rules the code cannot show:
 - In exact steps, find elements with `screen.getByRole(role, { name })` first, then `getByLabel` or `getByText`. A locator matching two nodes fails with `LOCATOR_AMBIGUOUS`: narrow it.
 - To start the video past setup, such as signing in, do the setup with raw calls, end it with an `expect` on its result, then `await begin()`. Compose cuts everything before it. e2e's saved sign-in sessions are unavailable with this recorder.
 - `workers: 1`: the recorder collects events per worker process.
+- On a device, `screen` sees only the target app, not the home screen: `app.open()` launches it, as it was last left. To start it fresh, reset its data before `begin()`. For Safari: `xcrun simctl terminate "<device>" com.apple.mobilesafari`, then delete `SafariTabs.db*` and `BrowserState.db*` under `$(xcrun simctl getenv "<device>" SIMULATOR_SHARED_RESOURCES_DIRECTORY)/Library/Safari`, where `<device>` is the name passed to `simulator()`. `booted` would pick any booted simulator, so it can wipe another one's Safari.
+- A device tap takes about 2 s and a `boundingBox()` about 0.6 s, so device videos hold still between steps. Keep device flows short.
+- The destructured `device` fixture (`device.home()`, `device.openLink()`) has no type in the shared `test`: annotate the fixtures `any` in device flows.
 - Raise `recorder({ dpr })` when compose warns about upscaling.
 
 ## 4. Record
@@ -96,6 +109,8 @@ From `.screen-capture/`:
 ```
 
 Run it twice when the flow has goals. The first run calls the agent and its thinking time lands in the video; the second replays the cached actions in seconds with no model calls (`Cache  N replayed`). Compose from the second.
+
+On a device, the agent's taps report no point, so a replay draws no taps. Fill every fallback from the first run's cache, then record the take with `SCREEN_CAPTURE_AGENT=none <e2e> run ...`: each goal runs its exact steps, which log their taps.
 
 Each attempt's `video/` folder (under `.e2e/results/`) holds `clip.mp4` and `clip.json`: the capture start, viewport, pixel size and events.
 

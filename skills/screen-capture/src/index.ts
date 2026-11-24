@@ -3,6 +3,8 @@ export { test, expect } from 'e2e';
 export type { E2EConfig } from 'e2e';
 export { web } from '@e2e-dev/web';
 export { recorder } from './provider.ts';
+export { simulator } from './simulator.ts';
+export { mobile } from '@e2e-dev/mobile';
 export { act, begin, caption, tap, hover, type, pause } from './events.ts';
 export { agents, harness } from './agent.ts';
 

@@ -57,7 +57,7 @@ export function recorder({ dpr = 2, fps = 60, hold = 1 }: RecorderOptions = {}):
       const work = mkdtempSync(path.join(tmpdir(), 'screen-capture-frames-'));
       const frames: number[] = [];
       let viewport = { width: 0, height: 0 };
-      startEvents();
+      startEvents({ pageTaps: true });
       // Every tap, from a helper, raw e2e or agent.act, is logged where and when the page receives it.
       await page.exposeBinding('__screenCaptureTap', (_source, x: number, y: number, t: number) =>
         push({ t, kind: 'tap', x, y }),
