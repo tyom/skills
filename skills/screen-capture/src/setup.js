@@ -35,7 +35,7 @@ if (process.argv.includes('--ios')) {
   } catch {
     fail('xcrun simctl is missing: install Xcode, then run xcode-select -s /Applications/Xcode.app');
   }
-  if (!/iPhone/.test(list)) fail('no iPhone simulator: add one in Xcode > Settings > Components');
+  if (!/iPhone|iPad/.test(list)) fail('no iOS simulator: add an iPhone in Xcode > Settings > Components');
 }
 
 // Install only when a pinned package is missing or at another version: `npm ci` removes the adapter below.

@@ -46,6 +46,13 @@ export function recorder({ dpr = 2, hold = 1 }: RecorderOptions = {}): BrowserPr
         };
         child.stderr!.on('data', onData);
         child.on('exit', (code) => reject(new Error(`Chromium exited with ${code}: ${log}`)));
+        // A failed spawn emits only `error`: without a listener it is an uncaught exception.
+        child.once('error', (error: NodeJS.ErrnoException) => {
+          rmSync(dataDir, { recursive: true, force: true });
+          reject(new Error(error.code === 'ENOENT'
+            ? 'screen-capture: Chromium is not installed; run node src/setup.js'
+            : `screen-capture: Chromium failed to start (${error.code ?? error.message})`));
+        });
       });
       const id = String(child.pid);
       procs.set(id, child);
@@ -94,19 +101,23 @@ export function recorder({ dpr = 2, hold = 1 }: RecorderOptions = {}): BrowserPr
           const end = Math.max(Date.now(), frames.at(-1) ?? 0) + hold * 1000;
           await page.screencast.stop().catch(() => {});
           await browser.close().catch(() => {});
-          if (!frames.length) throw new Error('screen-capture: no frames were captured');
-          await Promise.all(writes);
-          // Constant-rate frames from t0 to `end`, each linked to the latest capture.
-          // (The concat demuxer reads each JPEG as a 25fps stream and rounds its duration, losing frames.)
-          const cfr = path.join(work, 'cfr');
-          mkdirSync(cfr);
-          resample(frames, t0, end, FPS).forEach((i, k) =>
-            linkSync(path.join(work, `${i}.jpg`), path.join(cfr, `${k}.jpg`)),
-          );
-          // The pixel ratio this recorder sets: frames sent around a failed check report other units.
-          const clip = writeClip(dir, { input: ['-framerate', String(FPS), '-i', path.join(cfr, '%d.jpg')], t0, end, ratio: dpr });
-          rmSync(work, { recursive: true, force: true });
-          return clip;
+          // The frames take about 1 GB a minute: remove them whether or not the encode succeeds.
+          try {
+            if (!frames.length) throw new Error('screen-capture: no frames were captured');
+            await Promise.all(writes);
+            // Constant-rate frames from t0 to `end`, each linked to the latest capture.
+            // (The concat demuxer reads each JPEG as a 25fps stream and rounds its duration, losing frames.)
+            const cfr = path.join(work, 'cfr');
+            mkdirSync(cfr);
+            resample(frames, t0, end, FPS).forEach((i, k) =>
+              linkSync(path.join(work, `${i}.jpg`), path.join(cfr, `${k}.jpg`)),
+            );
+            // The pixel ratio this recorder sets: frames sent around a failed check report other units.
+            return writeClip(dir, { input: ['-framerate', String(FPS), '-i', path.join(cfr, '%d.jpg')], t0, end, ratio: dpr });
+          } finally {
+            await Promise.allSettled(writes);
+            rmSync(work, { recursive: true, force: true });
+          }
         },
       };
     },

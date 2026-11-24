@@ -3,7 +3,7 @@
 // Usage: node compose.ts <video dir> [<after video dir>] [options], see --help.
 import { parseArgs } from 'node:util';
 import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { align, chain, contentBox, cursor, layout, retime, timeline, type Panel, type Segment, type Size } from './timeline.ts';
 import type { RecordedClip } from './clip.ts';
@@ -82,28 +82,44 @@ const panes = clips.map((c, i) => ({
 const oneOf = <T extends string>(name: string, value: string, options: readonly T[]): T =>
   (options as readonly string[]).includes(value) ? (value as T) : fail(`--${name} must be one of ${options.join(', ')}`);
 
-/**
- * The area of the page that ever shows content, in either clip, padded: the rest is background.
- * Frames are read at half the CSS size, one a second.
- */
-function contentCrop() {
+/** The box around content in any frame of a clip, read at half the CSS size as the frames stream past. */
+async function clipContent(c: (typeof clips)[number], w: number, h: number) {
+  const ffmpeg = spawn('ffmpeg', [
+    '-v', 'error', '-ss', String(c.offset), '-i', path.join(c.dir, 'clip.mp4'),
+    '-vf', `scale=${w}:${h}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
+  ], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const size = w * h * 3;
+  let pending = Buffer.alloc(0);
+  let union = null as { left: number; top: number; right: number; bottom: number } | null;
+  for await (const chunk of ffmpeg.stdout) {
+    pending = Buffer.concat([pending, chunk]);
+    for (; pending.length >= size; pending = pending.subarray(size)) {
+      const b = contentBox(pending.subarray(0, size), w, h);
+      if (!b) continue;
+      union = {
+        left: Math.min(union?.left ?? b.x, b.x),
+        top: Math.min(union?.top ?? b.y, b.y),
+        right: Math.max(union?.right ?? 0, b.x + b.width),
+        bottom: Math.max(union?.bottom ?? 0, b.y + b.height),
+      };
+    }
+  }
+  const code = await new Promise((r) => (ffmpeg.exitCode !== null ? r(ffmpeg.exitCode) : ffmpeg.once('exit', r)));
+  if (code !== 0) fail(`could not read ${c.dir}/clip.mp4 to find its content`);
+  return union;
+}
+
+/** The area of the page that ever shows content, in either clip, padded: the rest is background. */
+async function contentCrop() {
   const w = Math.round(viewport.width / 2);
   const h = Math.round(viewport.height / 2);
-  const boxes = clips.flatMap((c) => {
-    // shortcut: holds every sampled frame in memory (about 1 MB a second for a desktop page), stream it for clips of many minutes.
-    const data = execFileSync('ffmpeg', [
-      '-v', 'error', '-ss', String(c.offset), '-i', path.join(c.dir, 'clip.mp4'),
-      '-vf', `fps=1,scale=${w}:${h}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
-    ], { maxBuffer: 1 << 30 });
-    const box = contentBox(data, w, h);
-    return box ? [box] : [];
-  });
+  const boxes = (await Promise.all(clips.map((c) => clipContent(c, w, h)))).filter((b) => b !== null);
   if (!boxes.length) return { x: 0, y: 0, ...viewport };
   const pad = 24;
-  const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) * 2 - pad);
-  const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) * 2 - pad);
-  const right = Math.min(viewport.width, Math.max(...boxes.map((b) => b.x + b.width)) * 2 + pad);
-  const bottom = Math.min(viewport.height, Math.max(...boxes.map((b) => b.y + b.height)) * 2 + pad);
+  const x = Math.max(0, Math.min(...boxes.map((b) => b.left)) * 2 - pad);
+  const y = Math.max(0, Math.min(...boxes.map((b) => b.top)) * 2 - pad);
+  const right = Math.min(viewport.width, Math.max(...boxes.map((b) => b.right)) * 2 + pad);
+  const bottom = Math.min(viewport.height, Math.max(...boxes.map((b) => b.bottom)) * 2 + pad);
   return { x, y, width: right - x, height: bottom - y };
 }
 
@@ -118,7 +134,7 @@ const crop =
             fail(`--crop must fit inside the ${viewport.width}x${viewport.height} page`);
           return { x, y, width, height };
         })()
-      : contentCrop();
+      : await contentCrop();
 
 // Wide pages stack, tall pages sit side by side; the canvas follows the shape of the whole.
 const stack = crop.width >= crop.height;
@@ -137,7 +153,7 @@ const canvas: Size = values.size
   : shape.width >= shape.height
     ? named.landscape
     : named.portrait;
-if (canvas.width % 2 || canvas.height % 2) fail('--size needs even numbers for H.264');
+if (!(canvas.width > 0 && canvas.height > 0) || canvas.width % 2 || canvas.height % 2) fail('--size needs positive even numbers for H.264');
 
 const panel: Panel = values.panel
   ? oneOf('panel', values.panel, ['none', 'side', 'bottom'] as const)
@@ -160,6 +176,7 @@ const radius = Math.round(Math.min(canvas.width, canvas.height) / 60);
 const label = compare ? Math.round(fontSize * 1.2) : 0;
 const { slots, panel: box } = layout(canvas, panel, crop, { panes: panes.length, stack, label });
 const { scale } = slots[0];
+if (!(scale > 0 && slots[0].width > 0 && slots[0].height > 0)) fail(`--size ${canvas.width}x${canvas.height} leaves no room for the video`);
 const dpr = video.width / viewport.width;
 if (scale > dpr)
   console.warn(

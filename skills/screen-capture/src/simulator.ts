@@ -60,8 +60,8 @@ export function simulator({ device, scale = 3, hold = 1 }: SimulatorOptions = {}
       startEvents({ pageTaps: false });
       const child: ChildProcess = spawn('xcrun', ['simctl', 'io', lease.id, 'recordVideo', '--codec=h264', '--force', raw]);
       // simctl writes the first frame when it prints this line: that is the clip's time zero.
+      let log = '';
       await new Promise<void>((resolve, reject) => {
-        let log = '';
         const onData = (d: Buffer) => {
           log += d;
           if (log.includes('Recording started')) resolve();
@@ -78,19 +78,21 @@ export function simulator({ device, scale = 3, hold = 1 }: SimulatorOptions = {}
           await sleep(300);
           const end = Date.now() + hold * 1000;
           await sleep(hold * 1000);
-          // A recorder that already died has fired its exit event; waiting for it would hang.
-          if (child.exitCode === null && child.signalCode === null) {
+          try {
+            // recordVideo runs until SIGINT: an earlier exit (the simulator shut down) left a cut-off video.
+            if (child.exitCode !== null || child.signalCode !== null)
+              throw new Error(`screen-capture: simctl recordVideo stopped during the flow (${child.exitCode ?? child.signalCode}): ${log}`);
             const exited = new Promise((r) => child.once('exit', r));
             child.kill('SIGINT');
             await exited;
+            // simctl writes frames only on change: resample to a constant rate and pad a still ending to `end`.
+            const seconds = ((end - t0) / 1000).toFixed(3);
+            return writeClip(dir, {
+              input: ['-i', raw], filter: `fps=${FPS},tpad=stop_mode=clone:stop_duration=${seconds},`, t0, end, ratio: scale,
+            });
+          } finally {
+            rmSync(work, { recursive: true, force: true });
           }
-          // simctl writes frames only on change: resample to a constant rate and pad a still ending to `end`.
-          const seconds = ((end - t0) / 1000).toFixed(3);
-          const clip = writeClip(dir, {
-            input: ['-i', raw], filter: `fps=${FPS},tpad=stop_mode=clone:stop_duration=${seconds},`, t0, end, ratio: scale,
-          });
-          rmSync(work, { recursive: true, force: true });
-          return clip;
         },
       };
     },
