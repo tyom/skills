@@ -56,7 +56,6 @@ export function recorder({ dpr = 2, fps = 60, hold = 1 }: RecorderOptions = {}):
       const page = browser.contexts().flatMap((c) => c.pages()).at(-1)!;
       const work = mkdtempSync(path.join(tmpdir(), 'screen-capture-frames-'));
       const frames: number[] = [];
-      let viewport = { width: 0, height: 0 };
       startEvents({ pageTaps: true });
       // Every tap, from a helper, raw e2e or agent.act, is logged where and when the page receives it.
       await page.exposeBinding('__screenCaptureTap', (_source, x: number, y: number, t: number) =>
@@ -74,11 +73,10 @@ export function recorder({ dpr = 2, fps = 60, hold = 1 }: RecorderOptions = {}):
       await page.screencast.start({
         quality: 95,
         size: { width: 8192, height: 8192 },
-        onFrame: ({ data, timestamp, viewportWidth, viewportHeight }) => {
+        onFrame: ({ data, timestamp }) => {
           // Frames go to disk as they arrive: a minute at 2x is about 1 GB in memory.
           writeFileSync(path.join(work, `${frames.length}.jpg`), data);
           frames.push(timestamp);
-          viewport = { width: viewportWidth, height: viewportHeight };
         },
       });
       return {
@@ -114,7 +112,8 @@ export function recorder({ dpr = 2, fps = 60, hold = 1 }: RecorderOptions = {}):
               {
                 startedAt: t0,
                 endedAt: end,
-                viewport,
+                // From the pixel ratio this recorder sets: frames sent around a failed check report other units.
+                viewport: { width: Math.round(size[0] / dpr), height: Math.round(size[1] / dpr) },
                 video: { width: size[0], height: size[1] },
                 events: takeEvents(),
               },
