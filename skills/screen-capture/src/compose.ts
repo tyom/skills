@@ -16,7 +16,7 @@ const help = `node compose.ts <video dir> [<after video dir>] [options]
   --size      landscape | portrait | square | WxH   (default: from the page's shape)
   --panel     none | side | bottom                  (default: side on landscape, bottom otherwise; none without captions)
   --pointer   cursor | tap | none                   (default: cursor for pages 1024px or wider, tap otherwise)
-  --crop      x,y,width,height in page CSS pixels, or none for the whole page
+  --crop      x,y,width,height in page CSS pixels, or none for the full recorded screen
               (default: the area any frame shows content in, from the page background)
   --labels    before,after pane labels, such as Bug,Fixed  (default: Before,After)
   --theme     dark | light                          (default: dark)

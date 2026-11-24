@@ -150,7 +150,7 @@ interface Point {
 /**
  * The time in the recorded video (`clip.mp4` seconds) to take each caption's still, showing its beat's
  * outcome. That outcome can paint just as the next caption starts, so look into the next beat's reading
- * pause: 0.3s in, or two frames before its first tap if sooner. The last beat ends two frames early: the
+ * pause: 0.3s in, or two frames before its first tap or hover if sooner (either can change the screen). The last beat ends two frames early: the
  * video holds whole frames, up to one fewer than the clip's end, and a seek past its last frame finds none.
  */
 export function stills({ offset, duration, captions, pointer }: {
