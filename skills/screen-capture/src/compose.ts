@@ -185,7 +185,8 @@ const { slots, panel: box } = layout(canvas, panel, crop, { panes: panes.length,
 const { scale } = slots[0];
 if (!(scale > 0 && slots[0].width > 0 && slots[0].height > 0)) fail(`--size ${canvas.width}x${canvas.height} leaves no room for the video`);
 const dpr = video.width / viewport.width;
-if (scale > dpr)
+// Stills without --size keep the recorded pixels, so only a fixed size can upscale.
+if (scale > dpr && !(values.stills && !values.size))
   console.warn(
     `compose: the clip is upscaled ${(scale / dpr).toFixed(2)}x (${Math.round(crop.width * dpr)}px of source in ${slots[0].width}px); record at a higher --dpr or crop less`,
   );
@@ -283,7 +284,7 @@ const baseCss = `    :root { --bg: ${colours.bg}; --fg: ${colours.fg}; --accent:
     .screen { left: 0; top: 0; width: 100%; height: 100%; }
     .label { position: absolute; height: ${label}px; padding-left: ${Math.round(radius / 2)}px; color: var(--fg); opacity: .75; font: 600 ${Math.round(fontSize * 0.7)}px/${label * 0.8}px ${font}; letter-spacing: .02em; }
     #panel { position: absolute; }
-    #panel p { color: var(--fg); font: 600 ${fontSize}px/1.25 ${font}; letter-spacing: -0.01em; text-align: ${panel === 'bottom' ? 'center' : 'left'}; }`;
+    #panel p { color: var(--fg); font: 600 ${fontSize}px/1.25 ${font}; letter-spacing: -0.01em; text-wrap: balance; text-align: ${panel === 'bottom' ? 'center' : 'left'}; }`;
 
 const html = `<!doctype html>
 <html lang="en">
@@ -335,10 +336,63 @@ if (values.stills) {
       return path.basename(file);
     }),
   );
+  /**
+   * Beats as cards: each beat's shots, cropped as in the video, with its caption under them, `cols` to a row.
+   * `shot` is one shot's width in CSS px, and every other size scales with it, so one still and the sheet match.
+   */
+  const cards = (beats: number[], shot: number, cols: number, numbered: boolean) => {
+    const k = shot / crop.width;
+    const u = numbered ? 1 : shot / 480;
+    const px = (n: number) => `${Math.round(n * u)}px`;
+    const beat = stack ? shot : panes.length * shot + (panes.length - 1) * 16 * u;
+    const width = Math.round(cols * beat + (cols - 1) * 32 * u + 2 * 48 * u);
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: ${width}px; padding: ${px(48)}; background: ${colours.bg}; color: ${colours.fg}; font-family: ${font}; }
+    .grid { display: grid; grid-template-columns: repeat(${cols}, ${beat}px); gap: ${px(48)} ${px(32)}; align-items: start; }
+    .panes { display: flex; flex-direction: ${stack ? 'column' : 'row'}; gap: ${px(16)}; }
+    .label { font: 600 ${px(14)}/1 ${font}; opacity: .75; letter-spacing: .02em; margin-bottom: ${px(8)}; }
+    .shot { position: relative; overflow: hidden; width: ${shot}px; height: ${Math.round(crop.height * k)}px; border-radius: ${px(12)}; box-shadow: 0 ${px(8)} ${px(28)} rgba(0,0,0,.3); }
+    .shot img { position: absolute; left: ${-crop.x * k}px; top: ${-crop.y * k}px; width: ${viewport.width * k}px; height: ${viewport.height * k}px; }
+    p { margin-top: ${px(16)}; font: 600 ${px(20)}/1.3 ${font}; letter-spacing: -0.01em; text-wrap: balance; text-align: ${numbered ? 'left' : 'center'}; }
+    p span { opacity: .5; margin-right: .4em; }
+  </style>
+</head>
+<body>
+  <div class="grid">${beats
+    .map(
+      (b) => `
+    <div>
+      <div class="panes">${panes
+        .map(
+          (p, i) => `
+        <div>${p.label ? `<div class="label">${escape(p.label)}</div>` : ''}<div class="shot"><img src="${frames[i][b]}" alt="" /></div></div>`,
+        )
+        .join('')}
+      </div>
+      <p>${numbered ? `<span>${b + 1}</span>` : ''}${escape(captions[b].text)}</p>
+    </div>`,
+    )
+    .join('')}
+  </div>
+</body>
+</html>
+`;
+    return { size: { width, height: 1 }, html };
+  };
+
+  // Each still: with --size, the video's layout at that size; without, a card at the recorded pixels, trimmed to it.
   const pages = captions.map((c, k) => ({
     file: `${String(k + 1).padStart(2, '0')}.png`,
-    size: canvas,
-    html: `<!doctype html>
+    fit: !values.size,
+    ...(values.size
+      ? {
+          size: canvas,
+          html: `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -353,74 +407,42 @@ ${baseCss}
 </body>
 </html>
 `,
+        }
+      : cards([k], Math.round(crop.width * dpr), 1, false)),
   }));
 
-  // The sheet: every beat in reading order, wrapped into rows, each shot cropped as in the video.
+  // The sheet: every beat in reading order, wrapped into rows.
   const shot = crop.height > crop.width ? 320 : 560;
-  const k = shot / crop.width;
-  const gap = 32;
   const beat = stack ? shot : panes.length * shot + (panes.length - 1) * 16;
-  const cols = Math.max(1, Math.min(captions.length, Math.floor(1800 / (beat + gap))));
-  const sheetWidth = cols * beat + (cols - 1) * gap + 2 * 48;
-  pages.push({
-    file: 'sheet.png',
-    size: { width: sheetWidth, height: 1 },
-    html: `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { width: ${sheetWidth}px; padding: 48px; background: ${colours.bg}; color: ${colours.fg}; font-family: ${font}; }
-    .grid { display: grid; grid-template-columns: repeat(${cols}, ${beat}px); gap: ${gap * 1.5}px ${gap}px; align-items: start; }
-    .panes { display: flex; flex-direction: ${stack ? 'column' : 'row'}; gap: 16px; }
-    .label { font: 600 14px/1 ${font}; opacity: .75; letter-spacing: .02em; margin-bottom: 8px; }
-    .shot { position: relative; overflow: hidden; width: ${shot}px; height: ${Math.round(crop.height * k)}px; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.3); }
-    .shot img { position: absolute; left: ${-crop.x * k}px; top: ${-crop.y * k}px; width: ${viewport.width * k}px; height: ${viewport.height * k}px; }
-    p { margin-top: 16px; font: 600 20px/1.3 ${font}; letter-spacing: -0.01em; }
-    p span { opacity: .5; margin-right: .4em; }
-  </style>
-</head>
-<body>
-  <div class="grid">${captions
-    .map(
-      (c, b) => `
-    <div>
-      <div class="panes">${panes
-        .map(
-          (p, i) => `
-        <div>${p.label ? `<div class="label">${escape(p.label)}</div>` : ''}<div class="shot"><img src="${frames[i][b]}" alt="" /></div></div>`,
-        )
-        .join('')}
-      </div>
-      <p><span>${b + 1}</span>${escape(c.text)}</p>
-    </div>`,
-    )
-    .join('')}
-  </div>
-</body>
-</html>
-`,
-  });
+  const cols = Math.max(1, Math.min(captions.length, Math.floor(1800 / (beat + 32))));
+  pages.push({ file: 'sheet.png', fit: true, ...cards(captions.map((_, b) => b), shot, cols, true) });
 
   const browser = await chromium.launch();
   try {
-    for (const page of pages) {
-      // The stills render at the output size; the sheet at 2x, so its small shots stay sharp.
+    const tabs = await Promise.all(
+      pages.map(async (page) => {
+        // Stills render at their own pixels; the sheet at 2x, so its small shots stay sharp.
+        const tab = await browser.newPage({ viewport: page.size, deviceScaleFactor: page.file === 'sheet.png' ? 2 : 1 });
+        const html = path.join(work, page.file.replace('.png', '.html'));
+        writeFileSync(html, page.html);
+        await tab.goto(pathToFileURL(html).href);
+        return tab;
+      }),
+    );
+    // Fitted stills of one set share a size: the tallest one's, as captions wrap to different line counts.
+    const heights = await Promise.all(tabs.map((tab) => tab.evaluate(() => document.documentElement.scrollHeight)));
+    const tallest = Math.max(...heights.slice(0, captions.length));
+    for (const [i, page] of pages.entries()) {
       const sheet = page.file === 'sheet.png';
-      const tab = await browser.newPage({ viewport: page.size, deviceScaleFactor: sheet ? 2 : 1 });
-      const html = path.join(work, page.file.replace('.png', '.html'));
-      writeFileSync(html, page.html);
-      await tab.goto(pathToFileURL(html).href);
-      await tab.screenshot({ path: path.join(dir, page.file), fullPage: sheet });
-      await tab.close();
+      if (page.fit && !sheet) await tabs[i].setViewportSize({ width: page.size.width, height: tallest });
+      await tabs[i].screenshot({ path: path.join(dir, page.file), fullPage: sheet });
     }
   } finally {
     await browser.close();
   }
   rmSync(work, { recursive: true, force: true });
   console.log(`compose: stills at ${times.map((t) => t.join(', ')).join(' and ')} s of the clip`);
-  console.log(`compose: ${canvas.width}x${canvas.height}, crop ${crop.x},${crop.y},${crop.width},${crop.height}, panel ${panel}: wrote ${captions.length} stills and sheet.png -> ${dir}`);
+  console.log(`compose: ${values.size ? `${canvas.width}x${canvas.height}, panel ${panel}` : 'fitted to the page'}, crop ${crop.x},${crop.y},${crop.width},${crop.height}: wrote ${captions.length} stills and sheet.png -> ${dir}`);
   process.exit(0);
 }
 
