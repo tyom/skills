@@ -3,9 +3,10 @@ name: screen-capture
 description: "Records a scripted web or iOS Simulator flow at 60fps, and renders it as a portrait, landscape or square MP4 with captions and a drawn cursor or taps."
 argument-hint: "<the flow to show, the app URL, and the sizes>"
 disable-model-invocation: true
-# Auto-approved while the skill runs: the compose script and frame checks.
+# Auto-approved while the skill runs: setup, the compose script and frame checks.
 allowed-tools:
-  - Bash(bun */screen-capture/src/compose.ts*)
+  - Bash(node */screen-capture/src/setup.js*)
+  - Bash(node */screen-capture/src/compose.ts*)
   - Bash(ffprobe *)
   - Bash(ffmpeg -v error *)
 ---
@@ -18,17 +19,9 @@ Web and iOS Simulator (macOS with Xcode). Android emulator capture is not built 
 
 `<skill>` below is the folder holding this file, and `<e2e>` is `E2E_TELEMETRY_DISABLED=1 <skill>/node_modules/.bin/e2e`. For e2e's own API (locators, actions, matchers, error codes), run `<e2e> guide writing-tests` or `<e2e> guide debugging`: they print the docs of the pinned version.
 
-## 1. Set up (first run)
+## 1. Set up
 
-If `<skill>/node_modules` is missing, run in `<skill>`: `bun install`, then `bunx playwright install chromium`. The first render also downloads HyperFrames' own Chrome.
-
-For iOS, check that `xcrun simctl list devices available` lists an iPhone simulator.
-
-Then install the adapter for the harness you run in, so `agent.act` goals run on its existing login (no API key). Use `--no-save`, and repeat it after any `bun install`, which removes it:
-
-- Claude Code: `bun add --no-save @agentclientprotocol/claude-agent-acp@0.112.0`
-- Codex: `bun add --no-save @agentclientprotocol/codex-acp@2.12.0` (about 400 MB, it bundles Codex)
-- Any other harness: install neither. Goals then run their exact fallback steps.
+Run `node <skill>/src/setup.js` before every recording session, with `--ios` for an iOS flow. It needs Node 22.22.3+ or 24.8+ and ffmpeg, and Xcode for iOS; when one is missing it stops and names the install command. It installs only what is missing, so a ready skill takes about a second: the packages, Playwright's Chromium, HyperFrames' Chrome, and the adapter for the harness it runs in (Claude Code or Codex), so `agent.act` goals run on that harness's login with no API key. In any other harness goals run their exact fallback steps. Run it from the harness itself, so it sees which one you use.
 
 `agents()` picks the harness it runs inside if its adapter is installed, else any installed adapter, else none. `SCREEN_CAPTURE_AGENT=claude|codex|none` overrides it. Known issue: with Codex plugins that add MCP servers (`codex mcp list` shows names absent from `~/.codex/config.toml`), the Codex adapter fails to start and goals fall back.
 
@@ -125,7 +118,7 @@ Compose only from a passing run.
 ## 5. Compose
 
 ```bash
-bun <skill>/src/compose.ts <video dir> --size portrait --out .screen-capture/out/<name>-portrait.mp4
+node <skill>/src/compose.ts <video dir> --size portrait --out .screen-capture/out/<name>-portrait.mp4
 ```
 
 `--help` lists the options: `--size`, `--panel none|side|bottom`, `--pointer cursor|tap|none`, `--crop x,y,w,h` in page CSS pixels, `--theme`, `--no-render`. The defaults follow the page: landscape with a side panel for wide pages, portrait with a bottom panel for tall ones, a cursor from 1024 px wide, taps below that. A render takes about 2 to 3 times the clip's length.

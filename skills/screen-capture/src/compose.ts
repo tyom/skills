@@ -1,12 +1,12 @@
 // Composes a recorded clip with its captions and pointer into a 60fps MP4 via HyperFrames.
-// Usage: bun compose.ts <video dir with clip.mp4 + clip.json> [options], see --help.
+// Usage: node compose.ts <video dir with clip.mp4 + clip.json> [options], see --help.
 import { parseArgs } from 'node:util';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { chain, cursor, layout, timeline, type Panel } from './timeline.ts';
 
-const help = `bun compose.ts <video dir> [options]
+const help = `node compose.ts <video dir> [options]
   --size      landscape | portrait | square | WxH   (default: from the page's shape)
   --panel     none | side | bottom                  (default: side on landscape, bottom otherwise; none without captions)
   --pointer   cursor | tap | none                   (default: cursor for pages 1024px or wider, tap otherwise)
@@ -205,7 +205,7 @@ writeFileSync(path.join(project, 'index.html'), html);
 console.log(`compose: ${canvas.width}x${canvas.height}, panel ${panel}, pointer ${pointerMode}, ${duration}s -> ${project}`);
 
 if (!values['no-render']) {
-  const bin = path.join(import.meta.dir, '..', 'node_modules', '.bin', 'hyperframes');
+  const bin = path.join(import.meta.dirname, '..', 'node_modules', '.bin', 'hyperframes');
   const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: '1' };
   const run = (args: string[]) => {
     const r = spawnSync(bin, args, { stdio: 'inherit', env });

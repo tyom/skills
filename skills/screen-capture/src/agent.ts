@@ -14,14 +14,19 @@ export const adapters = {
 export function pickHarness(env: Record<string, string | undefined>, installed: (h: 'claude' | 'codex') => boolean): Harness {
   const forced = env.SCREEN_CAPTURE_AGENT;
   if (forced === 'claude' || forced === 'codex' || forced === 'none') return forced;
-  const inside: Harness[] = [];
-  if (env.CODEX_THREAD_ID || env.CODEX_SANDBOX || env.CODEX_CI) inside.push('codex');
-  if (env.CLAUDECODE) inside.push('claude');
-  for (const h of [...inside, 'claude', 'codex'] as const) if (h !== 'none' && installed(h)) return h;
+  for (const h of [...inside(env), 'claude', 'codex'] as const) if (installed(h)) return h;
   return 'none';
 }
 
-const installed = (h: 'claude' | 'codex') => {
+/** The harnesses this process runs inside, from their environment variables. */
+export function inside(env: Record<string, string | undefined>) {
+  const found: ('claude' | 'codex')[] = [];
+  if (env.CODEX_THREAD_ID || env.CODEX_SANDBOX || env.CODEX_CI) found.push('codex');
+  if (env.CLAUDECODE) found.push('claude');
+  return found;
+}
+
+export const installed = (h: 'claude' | 'codex') => {
   const name = adapters[h].slice(0, adapters[h].lastIndexOf('@'));
   return existsSync(path.join(import.meta.dirname, '..', 'node_modules', name, 'package.json'));
 };
@@ -32,7 +37,7 @@ export const harness = (): Harness => pickHarness(process.env, installed);
 const unavailable = {
   name: 'screen-capture-none',
   async runStep(): Promise<never> {
-    throw new Error(`no coding agent: install one adapter in the skill (bun add --no-save ${adapters.claude} or ${adapters.codex})`);
+    throw new Error(`no coding agent: run the skill's setup (node src/setup.js) inside Claude Code or Codex`);
   },
 };
 

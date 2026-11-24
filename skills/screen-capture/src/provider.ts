@@ -65,7 +65,7 @@ export function recorder({ dpr = 2, fps = 60, hold = 1 }: RecorderOptions = {}):
       const listen = () =>
         addEventListener(
           'pointerdown',
-          (e) => (window as any).__screenCaptureTap(e.clientX, e.clientY, Date.now()),
+          (e: PointerEvent) => (window as any).__screenCaptureTap(e.clientX, e.clientY, Date.now()),
           true,
         );
       await page.addInitScript(listen);

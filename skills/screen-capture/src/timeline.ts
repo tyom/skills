@@ -21,9 +21,9 @@ export function timeline({ startedAt, endedAt, events }: Clip) {
     end: i + 1 < texts.length ? sec(texts[i + 1].t - begin) : duration,
     text: e.text,
   }));
-  const pointer = sorted
-    .filter((e) => e.kind === 'tap' || e.kind === 'hover')
-    .map(({ t, kind, x, y }) => ({ t: sec(t - begin), kind, x, y }));
+  const pointer = sorted.flatMap((e) =>
+    e.kind === 'tap' || e.kind === 'hover' ? [{ t: sec(e.t - begin), kind: e.kind, x: e.x, y: e.y }] : [],
+  );
   return { offset: sec(begin - startedAt), duration, captions, pointer };
 }
 

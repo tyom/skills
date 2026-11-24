@@ -2,9 +2,13 @@
   "name": "@tyom/screen-capture",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.4.5",
   "engines": {
-    "bun": ">=1.3.14"
+    "node": "^22.22.3 || >=24.8.0"
+  },
+  "scripts": {
+    "setup": "node src/setup.js",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@e2e-dev/acp": "0.1.3",
@@ -13,5 +17,9 @@
     "e2e": "0.24.0",
     "hyperframes": "0.9.91",
     "playwright": "1.65.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
   }
 }

@@ -32,7 +32,7 @@ function pushTap(point: { x: number; y: number }) {
   if (store[key] && !store[key].pageTaps) push({ t: Date.now(), kind: 'tap', ...point });
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Time for the drawn cursor to travel before an action; a device draws taps only, so it waits none. */
 const LEAD = 600;
