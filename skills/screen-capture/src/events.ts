@@ -28,9 +28,12 @@ export function push(event: CaptureEvent) {
   store[key]?.events.push(event);
 }
 
-/** Logs a tap the page cannot log itself: on a device, after the tap lands. */
+/** Time a device tap call takes to return after its touch lands: about 0.2 s measured on the iOS Simulator. */
+const DEVICE_TAP_LAG = 250;
+
+/** Logs a tap the page cannot log itself: on a device, once the tap call returns, dated back to the touch. */
 function pushTap(point: { x: number; y: number }) {
-  if (store[key] && !store[key].pageTaps) push({ t: Date.now(), kind: 'tap', ...point });
+  if (store[key] && !store[key].pageTaps) push({ t: Date.now() - DEVICE_TAP_LAG, kind: 'tap', ...point });
 }
 
 
