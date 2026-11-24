@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { layout, resample, timeline } from './timeline.ts';
+import { chain, layout, resample, timeline } from './timeline.ts';
 
 test('turns wall-clock events into clip seconds, each caption lasting until the next', () => {
   const clip = {
@@ -70,4 +70,28 @@ test('keeps a bottom panel under a short page, the pair centred vertically', () 
     slot: { x: 32, y: 468, width: 1016, height: 569, scale: 2.032 },
     panel: { x: 32, y: 1069, width: 1016, height: 384 },
   });
+});
+
+test('keeps caption keyframes in order when captions come faster than they ease in', () => {
+  // Line 0 opens 1 -> 1.45; line 1 arrives at 1.2, inside that ease, so line 0's fade to 0.45
+  // starts at 1.45 instead of 1.2 and ends at 1.2 + 0.45 = 1.65. Line 1 opens 1.2 -> 1.65.
+  const lines = chain([{ start: 1 }, { start: 1.2 }], 5);
+  const round = (stops: { t: number; open: boolean; opacity: number }[]) =>
+    stops.map((s) => ({ ...s, t: +s.t.toFixed(3) }));
+  expect(lines.map(round)).toEqual([
+    [
+      { t: 0, open: false, opacity: 0 },
+      { t: 1, open: false, opacity: 0 },
+      { t: 1.45, open: true, opacity: 1 },
+      { t: 1.45, open: true, opacity: 1 },
+      { t: 1.65, open: true, opacity: 0.45 },
+      { t: 5, open: true, opacity: 0.45 },
+    ],
+    [
+      { t: 0, open: false, opacity: 0 },
+      { t: 1.2, open: false, opacity: 0 },
+      { t: 1.65, open: true, opacity: 1 },
+      { t: 5, open: true, opacity: 1 },
+    ],
+  ]);
 });

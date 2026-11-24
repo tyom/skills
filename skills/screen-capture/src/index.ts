@@ -6,7 +6,7 @@ export { recorder } from './provider.ts';
 export { simulator } from './simulator.ts';
 export { mobile } from '@e2e-dev/mobile';
 export { act, begin, caption, tap, hover, type, pause } from './events.ts';
-export { agents, harness } from './agent.ts';
+export { agents } from './agent.ts';
 
 /** Viewports in CSS pixels. */
 export const viewports = {

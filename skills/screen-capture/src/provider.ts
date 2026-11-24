@@ -116,7 +116,6 @@ export function recorder({ dpr = 2, fps = 60, hold = 1 }: RecorderOptions = {}):
                 endedAt: end,
                 viewport,
                 video: { width: size[0], height: size[1] },
-                frames: frames.length,
                 events: takeEvents(),
               },
               null,

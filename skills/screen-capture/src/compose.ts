@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { layout, timeline, type Panel } from './timeline.ts';
+import { chain, cursor, layout, timeline, type Panel } from './timeline.ts';
 
 const help = `bun compose.ts <video dir> [options]
   --size      landscape | portrait | square | WxH   (default: from the page's shape)
@@ -105,24 +105,10 @@ const pct = (t: number) => `${s((Math.min(Math.max(t, 0), duration) / duration) 
 let pointerHtml = '';
 let pointerCss = '';
 if (pointerMode === 'cursor' && pointer.length) {
-  const stops: string[] = [];
-  const at = (t: number, p: { x: number; y: number }, scale = 1, ease = false) =>
-    stops.push(
-      `${pct(t)} { transform: translate(${s(p.x)}px, ${s(p.y)}px) scale(${scale});${ease ? ' animation-timing-function: cubic-bezier(.45,0,.2,1);' : ''} }`,
-    );
-  let prev = { t: 0, x: viewport.width / 2, y: viewport.height / 2 };
-  at(0, prev);
-  for (const e of pointer) {
-    // Leave after the previous action has played, arrive just before this one.
-    at(Math.max(prev.t + 0.15, e.t - 0.55), prev, 1, true);
-    at(e.t - 0.08, e);
-    if (e.kind === 'tap') {
-      at(e.t, e, 0.82);
-      at(e.t + 0.14, e);
-    }
-    prev = e;
-  }
-  at(duration, prev);
+  const stops = cursor(pointer, { x: viewport.width / 2, y: viewport.height / 2 }, duration).map(
+    (k) =>
+      `${pct(k.t)} { transform: translate(${s(k.x)}px, ${s(k.y)}px) scale(${k.scale});${k.ease ? ' animation-timing-function: cubic-bezier(.45,0,.2,1);' : ''} }`,
+  );
   pointerCss += `
     #cursor { left: 0; top: 0; width: 22px; height: 30px; z-index: 3; animation: cursor-move ${duration}s linear both; transform-origin: 2px 2px; }
     @keyframes cursor-move { ${[...new Set(stops)].join('\n      ')} }
@@ -154,29 +140,16 @@ const radius = Math.round(Math.min(canvas.width, canvas.height) / 60);
 
 // Captions form a chain: each new line grows in at the bottom (its grid row opens from 0fr to 1fr,
 // so no height is measured) and pushes the older ones up, which fade and leave after three more lines.
-const FADE = [1, 0.45, 0.18, 0];
-const EASE = 0.45;
+const lineCss = (k: { open: boolean; opacity: number }) =>
+  k.open ? `grid-template-rows: 1fr; opacity: ${k.opacity}; transform: none` : 'grid-template-rows: 0fr; opacity: 0; transform: translateY(0.6em)';
 let chainCss = '';
 const chainHtml = box
-  ? captions
-      .map((c, i) => {
-        const stops: [number, string][] = [
-          [0, 'grid-template-rows: 0fr; opacity: 0; transform: translateY(0.6em)'],
-          [c.start, 'grid-template-rows: 0fr; opacity: 0; transform: translateY(0.6em)'],
-          [c.start + EASE, 'grid-template-rows: 1fr; opacity: 1; transform: none'],
-        ];
-        for (let k = 1; k < FADE.length && i + k < captions.length; k++) {
-          const t = captions[i + k].start;
-          stops.push([t, `grid-template-rows: 1fr; opacity: ${FADE[k - 1]}; transform: none`]);
-          stops.push([t + EASE, `grid-template-rows: 1fr; opacity: ${FADE[k]}; transform: none`]);
-        }
-        stops.push([duration, stops.at(-1)![1]]);
-        // Captions closer than EASE apart would put stops out of order.
-        for (let k = 1; k < stops.length; k++) stops[k][0] = Math.max(stops[k][0], stops[k - 1][0]);
+  ? chain(captions, duration)
+      .map((stops, i) => {
         chainCss += `
-    @keyframes line-${i} { ${stops.map(([t, css]) => `${pct(t)} { ${css}; animation-timing-function: cubic-bezier(.2,.7,.2,1); }`).join(' ')} }`;
+    @keyframes line-${i} { ${stops.map((k) => `${pct(k.t)} { ${lineCss(k)}; animation-timing-function: cubic-bezier(.2,.7,.2,1); }`).join(' ')} }`;
         return `
-        <div id="line-${i}" class="line" style="animation-name: line-${i}"><p>${escape(c.text)}</p></div>`;
+        <div id="line-${i}" class="line" style="animation-name: line-${i}"><p>${escape(captions[i].text)}</p></div>`;
       })
       .join('')
   : '';
